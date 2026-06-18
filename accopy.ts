@@ -15,242 +15,7 @@ declare function setInterval(callback: Function, delay: number): any;
 declare function clearInterval(id: any): void;
 // Tell TypeScript that Frida's global variables are valid
 
-Il2Cpp.$config.exports = {
-    il2cpp_init: () => Il2Cpp.module.findExportByName("HVeI_yJcbhX"),
-    il2cpp_init_utf16: () => Il2Cpp.module.findExportByName("jLFFDoTEcZG"),
-    il2cpp_shutdown: () => Il2Cpp.module.findExportByName("ELiA_PqMAIZ"),
-    il2cpp_set_config_dir: () => Il2Cpp.module.findExportByName("RKMSvsIeYtM"),
-    il2cpp_set_data_dir: () => Il2Cpp.module.findExportByName("fksQUgpnqza"),
-    il2cpp_set_temp_dir: () => Il2Cpp.module.findExportByName("rDfFPSBltHA"),
-    il2cpp_set_commandline_arguments: () => Il2Cpp.module.findExportByName("idRAVrDrdRX"),
-    il2cpp_set_commandline_arguments_utf16: () => Il2Cpp.module.findExportByName("lsIYPOEwnPQ"),
-    il2cpp_set_config_utf16: () => Il2Cpp.module.findExportByName("xDGigjqOqnk"),
-    il2cpp_set_config: () => Il2Cpp.module.findExportByName("rivoAGIxYXA"),
-    il2cpp_set_memory_callbacks: () => Il2Cpp.module.findExportByName("RjNCerjibuL"),
-    il2cpp_memory_pool_set_region_size: () => Il2Cpp.module.findExportByName("yWOxlSAvRbC"),
-    il2cpp_memory_pool_get_region_size: () => Il2Cpp.module.findExportByName("uUgwhJCZPtz"),
-    il2cpp_get_corlib: () => Il2Cpp.module.findExportByName("PvGQBRaNIyk"),
-    il2cpp_add_internal_call: () => Il2Cpp.module.findExportByName("GPizeDgWEwo"),
-    il2cpp_resolve_icall: () => Il2Cpp.module.findExportByName("hNZbboXADKs"),
-    il2cpp_alloc: () => Il2Cpp.module.findExportByName("NjXTzLzPzWO"),
-    il2cpp_free: () => Il2Cpp.module.findExportByName("ahdELGPcibO"),
-    il2cpp_array_class_get: () => Il2Cpp.module.findExportByName("xrIVFFlKstQ"),
-    il2cpp_array_length: () => Il2Cpp.module.findExportByName("ETpRzUKYvrB"),
-    il2cpp_array_get_byte_length: () => Il2Cpp.module.findExportByName("DRJuDfRztrx"),
-    il2cpp_array_new: () => Il2Cpp.module.findExportByName("HmFJfzGICco"),
-    il2cpp_array_new_specific: () => Il2Cpp.module.findExportByName("kESfgnJDSuO"),
-    il2cpp_array_new_full: () => Il2Cpp.module.findExportByName("AjShHkkkqZd"),
-    il2cpp_bounded_array_class_get: () => Il2Cpp.module.findExportByName("XRDuuvfUugw"),
-    il2cpp_array_element_size: () => Il2Cpp.module.findExportByName("dOrUDmQeWyh"),
-    il2cpp_assembly_get_image: () => Il2Cpp.module.findExportByName("QaKYomFMbpT"),
-    il2cpp_class_for_each: () => Il2Cpp.module.findExportByName("IcbcfbltFWf"),
-    il2cpp_class_enum_basetype: () => Il2Cpp.module.findExportByName("yWtDRbuqnAf"),
-    il2cpp_class_is_inited: () => Il2Cpp.module.findExportByName("JlaxOPXZDxM"),
-    il2cpp_class_is_generic: () => Il2Cpp.module.findExportByName("aqTTvDucKul"),
-    il2cpp_class_is_inflated: () => Il2Cpp.module.findExportByName("xfGsKKiSLHp"),
-    il2cpp_class_is_assignable_from: () => Il2Cpp.module.findExportByName("kwHhRFrmfBL"),
-    il2cpp_class_is_subclass_of: () => Il2Cpp.module.findExportByName("jQYiCAwTV_W"),
-    il2cpp_class_has_parent: () => Il2Cpp.module.findExportByName("TCRDQPSDGPP"),
-    il2cpp_class_from_il2cpp_type: () => Il2Cpp.module.findExportByName("PTk_oVArDed"),
-    il2cpp_class_from_name: () => Il2Cpp.module.findExportByName("TRziMfczxSB"),
-    il2cpp_class_from_system_type: () => Il2Cpp.module.findExportByName("NxzKyCGxzef"),
-    il2cpp_class_get_element_class: () => Il2Cpp.module.findExportByName("vdiZ_ynANDI"),
-    il2cpp_class_get_events: () => Il2Cpp.module.findExportByName("cYOavbbfoLQ"),
-    il2cpp_class_get_fields: () => Il2Cpp.module.findExportByName("NnXZweHQlvE"),
-    il2cpp_class_get_nested_types: () => Il2Cpp.module.findExportByName("IPPhqsjDotl"),
-    il2cpp_class_get_interfaces: () => Il2Cpp.module.findExportByName("dfSYjjSrQlk"),
-    il2cpp_class_get_properties: () => Il2Cpp.module.findExportByName("AWarAsAUIxq"),
-    il2cpp_class_get_property_from_name: () => Il2Cpp.module.findExportByName("TeooxgeVDZV"),
-    il2cpp_class_get_field_from_name: () => Il2Cpp.module.findExportByName("SFJZtKYJWvp"),
-    il2cpp_class_get_methods: () => Il2Cpp.module.findExportByName("qoCOUT_Yhpw"),
-    il2cpp_class_get_method_from_name: () => Il2Cpp.module.findExportByName("vcTUDWIfXxH"),
-    il2cpp_class_get_name: () => Il2Cpp.module.findExportByName("oJuhEUuSwlQ"),
-    il2cpp_type_get_name_chunked: () => Il2Cpp.module.findExportByName("sInNwTJFftx"),
-    il2cpp_class_get_namespace: () => Il2Cpp.module.findExportByName("dIPjjvUxREy"),
-    il2cpp_class_get_parent: () => Il2Cpp.module.findExportByName("tBzZMSgmXyj"),
-    il2cpp_class_get_declaring_type: () => Il2Cpp.module.findExportByName("eRdpKnNmnYO"),
-    il2cpp_class_instance_size: () => Il2Cpp.module.findExportByName("pSHbktgeEBP"),
-    il2cpp_class_num_fields: () => Il2Cpp.module.findExportByName("DQuSMM_OlwM"),
-    il2cpp_class_is_valuetype: () => Il2Cpp.module.findExportByName("NuUUzQcQtxx"),
-    il2cpp_class_value_size: () => Il2Cpp.module.findExportByName("TAHdY_ij_KP"),
-    il2cpp_class_is_blittable: () => Il2Cpp.module.findExportByName("mtzUg_JTpVI"),
-    il2cpp_class_get_flags: () => Il2Cpp.module.findExportByName("q_wtbySPuE_"),
-    il2cpp_class_is_abstract: () => Il2Cpp.module.findExportByName("keCjLcPXODV"),
-    il2cpp_class_is_interface: () => Il2Cpp.module.findExportByName("TyQRmvUCQNq"),
-    il2cpp_class_array_element_size: () => Il2Cpp.module.findExportByName("ZnmCuajDJKq"),
-    il2cpp_class_from_type: () => Il2Cpp.module.findExportByName("zFryvxCFfJq"),
-    il2cpp_class_get_type: () => Il2Cpp.module.findExportByName("soUgWDUaVqR"),
-    il2cpp_class_get_type_token: () => Il2Cpp.module.findExportByName("TsqWNNdHmfm"),
-    il2cpp_class_has_attribute: () => Il2Cpp.module.findExportByName("kzXnGJWbiqW"),
-    il2cpp_class_has_references: () => Il2Cpp.module.findExportByName("gEPORCPJCvK"),
-    il2cpp_class_is_enum: () => Il2Cpp.module.findExportByName("IpIbSofHNxS"),
-    il2cpp_class_get_image: () => Il2Cpp.module.findExportByName("nqALPEX_uBc"),
-    il2cpp_class_get_assemblyname: () => Il2Cpp.module.findExportByName("AtbFw_hGInC"),
-    il2cpp_class_get_rank: () => Il2Cpp.module.findExportByName("amgEiDJqsfC"),
-    il2cpp_class_get_data_size: () => Il2Cpp.module.findExportByName("rkvLyMdotbA"),
-    il2cpp_class_get_static_field_data: () => Il2Cpp.module.findExportByName("ktBOBtSDYAG"),
-    il2cpp_stats_dump_to_file: () => Il2Cpp.module.findExportByName("wvQnUifevrC"),
-    il2cpp_stats_get_value: () => Il2Cpp.module.findExportByName("bEYLveWvBAn"),
-    il2cpp_domain_get: () => Il2Cpp.module.findExportByName("vvjHxxrwzgJ"),
-    il2cpp_domain_assembly_open: () => Il2Cpp.module.findExportByName("a_ox_VxgRqG"),
-    il2cpp_domain_get_assemblies: () => Il2Cpp.module.findExportByName("fvDecodcEDv"),
-    il2cpp_raise_exception: () => Il2Cpp.module.findExportByName("RBTAlRCfgSG"),
-    il2cpp_exception_from_name_msg: () => Il2Cpp.module.findExportByName("BFK_cLRdjuf"),
-    il2cpp_get_exception_argument_null: () => Il2Cpp.module.findExportByName("ayQNOkjLUUB"),
-    il2cpp_format_exception: () => Il2Cpp.module.findExportByName("yITZkxYftQL"),
-    il2cpp_format_stack_trace: () => Il2Cpp.module.findExportByName("cZDUOqojxay"),
-    il2cpp_unhandled_exception: () => Il2Cpp.module.findExportByName("eLQAekFOOfq"),
-    il2cpp_native_stack_trace: () => Il2Cpp.module.findExportByName("azHjTqePDUT"),
-    il2cpp_field_get_flags: () => Il2Cpp.module.findExportByName("xHNMczpKKYu"),
-    il2cpp_field_get_from_reflection: () => Il2Cpp.module.findExportByName("YSmwzLAyada"),
-    il2cpp_field_get_name: () => Il2Cpp.module.findExportByName("zO_PzmUgbKM"),
-    il2cpp_field_get_parent: () => Il2Cpp.module.findExportByName("KOxpQYNlrRU"),
-    il2cpp_field_get_object: () => Il2Cpp.module.findExportByName("FzXpKhLOwyp"),
-    il2cpp_field_get_offset: () => Il2Cpp.module.findExportByName("vmQKApiUHSJ"),
-    il2cpp_field_get_type: () => Il2Cpp.module.findExportByName("LiKbELwxpjT"),
-    il2cpp_field_get_value: () => Il2Cpp.module.findExportByName("dPaiZBLVPmd"),
-    il2cpp_field_get_value_object: () => Il2Cpp.module.findExportByName("SrDQdGIlxLt"),
-    il2cpp_field_has_attribute: () => Il2Cpp.module.findExportByName("FvXCptCogGh"),
-    il2cpp_field_set_value: () => Il2Cpp.module.findExportByName("WXlBKaeVjfh"),
-    il2cpp_field_static_get_value: () => Il2Cpp.module.findExportByName("mE_zTwkFLPU"),
-    il2cpp_field_static_set_value: () => Il2Cpp.module.findExportByName("eUsDVwqeFlj"),
-    il2cpp_field_set_value_object: () => Il2Cpp.module.findExportByName("umtYEHdWAxN"),
-    il2cpp_field_is_literal: () => Il2Cpp.module.findExportByName("LFTgCNKxMM_"),
-    il2cpp_gc_collect: () => Il2Cpp.module.findExportByName("SCqlTJKlGrQ"),
-    il2cpp_gc_collect_a_little: () => Il2Cpp.module.findExportByName("cdMQdZmsRFa"),
-    il2cpp_gc_start_incremental_collection: () => Il2Cpp.module.findExportByName("lwPVAmQbjKq"),
-    il2cpp_gc_disable: () => Il2Cpp.module.findExportByName("RAHguyDGliB"),
-    il2cpp_gc_enable: () => Il2Cpp.module.findExportByName("UQnVOapWXeL"),
-    il2cpp_gc_is_disabled: () => Il2Cpp.module.findExportByName("imhLdadrvLc"),
-    il2cpp_gc_set_mode: () => Il2Cpp.module.findExportByName("xTNQWhPYTtO"),
-    il2cpp_gc_get_max_time_slice_ns: () => Il2Cpp.module.findExportByName("KSZalbfYlaD"),
-    il2cpp_gc_set_max_time_slice_ns: () => Il2Cpp.module.findExportByName("TJDLqVimULn"),
-    il2cpp_gc_is_incremental: () => Il2Cpp.module.findExportByName("iqRoCmBv_jl"),
-    il2cpp_gc_get_used_size: () => Il2Cpp.module.findExportByName("ZWWOrcwXQST"),
-    il2cpp_gc_get_heap_size: () => Il2Cpp.module.findExportByName("ZOTZRyRqsLb"),
-    il2cpp_gc_wbarrier_set_field: () => Il2Cpp.module.findExportByName("Kn_oVbMixYl"),
-    il2cpp_gc_has_strict_wbarriers: () => Il2Cpp.module.findExportByName("bteTOFjalaY"),
-    il2cpp_gc_set_external_allocation_tracker: () => Il2Cpp.module.findExportByName("DXReFFdaAxX"),
-    il2cpp_gc_set_external_wbarrier_tracker: () => Il2Cpp.module.findExportByName("HnXlZmExLks"),
-    il2cpp_gc_foreach_heap: () => Il2Cpp.module.findExportByName("OmkkmWDvxCG"),
-    il2cpp_stop_gc_world: () => Il2Cpp.module.findExportByName("PiThCyHNLWJ"),
-    il2cpp_start_gc_world: () => Il2Cpp.module.findExportByName("YXtTuYL_xui"),
-    il2cpp_gc_alloc_fixed: () => Il2Cpp.module.findExportByName("clkTVh_AxQY"),
-    il2cpp_gc_free_fixed: () => Il2Cpp.module.findExportByName("bsfNsFyEXKD"),
-    il2cpp_gchandle_new: () => Il2Cpp.module.findExportByName("YkKIOwHD_hG"),
-    il2cpp_gchandle_new_weakref: () => Il2Cpp.module.findExportByName("HFTPSlgOHtl"),
-    il2cpp_gchandle_get_target: () => Il2Cpp.module.findExportByName("SPnmoOktoDX"),
-    il2cpp_gchandle_free: () => Il2Cpp.module.findExportByName("QaLmmFGut_I"),
-    il2cpp_gchandle_foreach_get_target: () => Il2Cpp.module.findExportByName("noVuleowCAZ"),
-    il2cpp_object_header_size: () => Il2Cpp.module.findExportByName("ZTxCQvbXPnF"),
-    il2cpp_array_object_header_size: () => Il2Cpp.module.findExportByName("KpBmNvpdxvj"),
-    il2cpp_offset_of_array_length_in_array_object_header: () => Il2Cpp.module.findExportByName("hKRKuNQqMig"),
-    il2cpp_offset_of_array_bounds_in_array_object_header: () => Il2Cpp.module.findExportByName("OvFyZWOalLM"),
-    il2cpp_allocation_granularity: () => Il2Cpp.module.findExportByName("PsnUjZAMV_c"),
-    il2cpp_unity_liveness_allocate_struct: () => Il2Cpp.module.findExportByName("BfURemZCUPd"),
-    il2cpp_unity_liveness_calculation_from_root: () => Il2Cpp.module.findExportByName("JbBDMTcVair"),
-    il2cpp_unity_liveness_calculation_from_statics: () => Il2Cpp.module.findExportByName("pOpyddVCPgZ"),
-    il2cpp_unity_liveness_finalize: () => Il2Cpp.module.findExportByName("CWYUUpXL_rG"),
-    il2cpp_unity_liveness_free_struct: () => Il2Cpp.module.findExportByName("YauneLhmpik"),
-    il2cpp_method_get_return_type: () => Il2Cpp.module.findExportByName("ISBIsBUnDfd"),
-    il2cpp_method_get_declaring_type: () => Il2Cpp.module.findExportByName("G_BD_jiPAnV"),
-    il2cpp_method_get_name: () => Il2Cpp.module.findExportByName("blRrdJDgDZJ"),
-    il2cpp_method_get_from_reflection: () => Il2Cpp.module.findExportByName("QpWTOZXSuWD"),
-    il2cpp_method_get_object: () => Il2Cpp.module.findExportByName("oZdcQIIpfiZ"),
-    il2cpp_method_is_generic: () => Il2Cpp.module.findExportByName("Z_ujUOCgkGC"),
-    il2cpp_method_is_inflated: () => Il2Cpp.module.findExportByName("vYVUVuTJLZf"),
-    il2cpp_method_is_instance: () => Il2Cpp.module.findExportByName("xmHosZsOrBO"),
-    il2cpp_method_get_param_count: () => Il2Cpp.module.findExportByName("HCVKhVGuSET"),
-    il2cpp_method_get_param: () => Il2Cpp.module.findExportByName("FmhpTdAxw_t"),
-    il2cpp_method_get_class: () => Il2Cpp.module.findExportByName("JtoPDqEDErC"),
-    il2cpp_method_has_attribute: () => Il2Cpp.module.findExportByName("lqjnhcsllkZ"),
-    il2cpp_method_get_flags: () => Il2Cpp.module.findExportByName("fwfCVfCfoqQ"),
-    il2cpp_method_get_token: () => Il2Cpp.module.findExportByName("CyusDNGVslS"),
-    il2cpp_method_get_param_name: () => Il2Cpp.module.findExportByName("KqzwmNdyDhQ"),
-    il2cpp_property_get_flags: () => Il2Cpp.module.findExportByName("DxuTcMw_Evy"),
-    il2cpp_property_get_get_method: () => Il2Cpp.module.findExportByName("zwTSwDIfrje"),
-    il2cpp_property_get_set_method: () => Il2Cpp.module.findExportByName("ypFPZxSixth"),
-    il2cpp_property_get_name: () => Il2Cpp.module.findExportByName("rstSShHKRot"),
-    il2cpp_property_get_parent: () => Il2Cpp.module.findExportByName("IcvAuhyyfdx"),
-    il2cpp_object_get_class: () => Il2Cpp.module.findExportByName("vdpgprKgZHi"),
-    il2cpp_object_get_size: () => Il2Cpp.module.findExportByName("_pEafqybWbi"),
-    il2cpp_object_get_virtual_method: () => Il2Cpp.module.findExportByName("HSMsmh_Yeen"),
-    il2cpp_object_new: () => Il2Cpp.module.findExportByName("DYOqOnNPqXn"),
-    il2cpp_object_unbox: () => Il2Cpp.module.findExportByName("aMECPlGqQUc"),
-    il2cpp_value_box: () => Il2Cpp.module.findExportByName("XIoGzNGyvTP"),
-    il2cpp_monitor_enter: () => Il2Cpp.module.findExportByName("_vSgtplaAPC"),
-    il2cpp_monitor_try_enter: () => Il2Cpp.module.findExportByName("_xUaNjHYsuS"),
-    il2cpp_monitor_exit: () => Il2Cpp.module.findExportByName("MWgrMXJRAvN"),
-    il2cpp_monitor_pulse: () => Il2Cpp.module.findExportByName("outDEvOUIhF"),
-    il2cpp_monitor_pulse_all: () => Il2Cpp.module.findExportByName("OAPosQypywr"),
-    il2cpp_monitor_wait: () => Il2Cpp.module.findExportByName("KXVWbRHQzwc"),
-    il2cpp_monitor_try_wait: () => Il2Cpp.module.findExportByName("UEodnrwQkft"),
-    il2cpp_runtime_invoke: () => Il2Cpp.module.findExportByName("QZEfRGiqJNt"),
-    il2cpp_runtime_invoke_convert_args: () => Il2Cpp.module.findExportByName("_XwrCNDbpnc"),
-    il2cpp_runtime_class_init: () => Il2Cpp.module.findExportByName("JahlYQlwMHO"),
-    il2cpp_runtime_object_init: () => Il2Cpp.module.findExportByName("rSmSzKWoPle"),
-    il2cpp_runtime_object_init_exception: () => Il2Cpp.module.findExportByName("GLyusSP_hmb"),
-    il2cpp_runtime_unhandled_exception_policy_set: () => Il2Cpp.module.findExportByName("vY_RwoqRVEt"),
-    il2cpp_string_length: () => Il2Cpp.module.findExportByName("iWUTZjQGlaZ"),
-    il2cpp_string_chars: () => Il2Cpp.module.findExportByName("rlvXSmGXPzm"),
-    il2cpp_string_new: () => Il2Cpp.module.findExportByName("wKOTXPBISHt"),
-    il2cpp_string_new_len: () => Il2Cpp.module.findExportByName("DDzAoCVVOfo"),
-    il2cpp_string_new_utf16: () => Il2Cpp.module.findExportByName("GqjwfcUyzlx"),
-    il2cpp_string_new_wrapper: () => Il2Cpp.module.findExportByName("ABVmxYwcMQL"),
-    il2cpp_string_intern: () => Il2Cpp.module.findExportByName("XAPq_JfVUSY"),
-    il2cpp_string_is_interned: () => Il2Cpp.module.findExportByName("QckkMHMkEMr"),
-    il2cpp_thread_current: () => Il2Cpp.module.findExportByName("vyzjIRthelx"),
-    il2cpp_thread_attach: () => Il2Cpp.module.findExportByName("whLRcgiMNvQ"),
-    il2cpp_thread_detach: () => Il2Cpp.module.findExportByName("FOWnDrLLLRm"),
-    il2cpp_is_vm_thread: () => Il2Cpp.module.findExportByName("nMVShvlWDUx"),
-    il2cpp_current_thread_walk_frame_stack: () => Il2Cpp.module.findExportByName("JjrWVuINdag"),
-    il2cpp_thread_walk_frame_stack: () => Il2Cpp.module.findExportByName("zleREahpcMc"),
-    il2cpp_current_thread_get_top_frame: () => Il2Cpp.module.findExportByName("YtEcqtVMlGg"),
-    il2cpp_thread_get_top_frame: () => Il2Cpp.module.findExportByName("SyREztUDNxG"),
-    il2cpp_current_thread_get_frame_at: () => Il2Cpp.module.findExportByName("HZFCzGYlkCM"),
-    il2cpp_thread_get_frame_at: () => Il2Cpp.module.findExportByName("sOlQybPMnVG"),
-    il2cpp_current_thread_get_stack_depth: () => Il2Cpp.module.findExportByName("tlDaviGIwyP"),
-    il2cpp_thread_get_stack_depth: () => Il2Cpp.module.findExportByName("WICantUojcd"),
-    il2cpp_override_stack_backtrace: () => Il2Cpp.module.findExportByName("cgWKuxEFfUR"),
-    il2cpp_type_get_object: () => Il2Cpp.module.findExportByName("YBitOkUFU_L"),
-    il2cpp_type_get_type: () => Il2Cpp.module.findExportByName("mPMlLpWlbuH"),
-    il2cpp_type_get_class_or_element_class: () => Il2Cpp.module.findExportByName("DZIXIwdUjZo"),
-    il2cpp_type_get_name: () => Il2Cpp.module.findExportByName("wfmXN_UsYAe"),
-    il2cpp_type_is_byref: () => Il2Cpp.module.findExportByName("XAz_cdwvqoi"),
-    il2cpp_type_get_attrs: () => Il2Cpp.module.findExportByName("hgnptyEmsSQ"),
-    il2cpp_type_equals: () => Il2Cpp.module.findExportByName("yQpZiXhZBlJ"),
-    il2cpp_type_get_assembly_qualified_name: () => Il2Cpp.module.findExportByName("SkQcPEbqDsQ"),
-    il2cpp_type_get_reflection_name: () => Il2Cpp.module.findExportByName("kQRDXjocjcK"),
-    il2cpp_type_is_static: () => Il2Cpp.module.findExportByName("UudIUDjvTgA"),
-    il2cpp_type_is_pointer_type: () => Il2Cpp.module.findExportByName("cvSFOboApUa"),
-    il2cpp_image_get_assembly: () => Il2Cpp.module.findExportByName("QuTbavqKTrM"),
-    il2cpp_image_get_name: () => Il2Cpp.module.findExportByName("ZaPqhiAyUsd"),
-    il2cpp_image_get_filename: () => Il2Cpp.module.findExportByName("EDjvdlJTPSC"),
-    il2cpp_image_get_entry_point: () => Il2Cpp.module.findExportByName("PxwB_JvyQaS"),
-    il2cpp_image_get_class_count: () => Il2Cpp.module.findExportByName("IJHbWNNeFD_"),
-    il2cpp_image_get_class: () => Il2Cpp.module.findExportByName("TDRnlTkiorl"),
-    il2cpp_capture_memory_snapshot: () => Il2Cpp.module.findExportByName("tfmNsmGXtXs"),
-    il2cpp_free_captured_memory_snapshot: () => Il2Cpp.module.findExportByName("lSmVJqqieYr"),
-    il2cpp_set_find_plugin_callback: () => Il2Cpp.module.findExportByName("yPLAX_VcnnJ"),
-    il2cpp_register_log_callback: () => Il2Cpp.module.findExportByName("jmrQeJKWrdO"),
-    il2cpp_debugger_set_agent_options: () => Il2Cpp.module.findExportByName("nnKdFIbBAdq"),
-    il2cpp_is_debugger_attached: () => Il2Cpp.module.findExportByName("pCFHigzJPLS"),
-    il2cpp_register_debugger_agent_transport: () => Il2Cpp.module.findExportByName("tnpQdLrvbna"),
-    il2cpp_debug_foreach_method: () => Il2Cpp.module.findExportByName("hYDezYjQf_Y"),
-    il2cpp_debug_get_method_info: () => Il2Cpp.module.findExportByName("utwHIudppTq"),
-    il2cpp_unity_install_unitytls_interface: () => Il2Cpp.module.findExportByName("PKktoQqdsJU"),
-    il2cpp_custom_attrs_from_class: () => Il2Cpp.module.findExportByName("ovAYzhnDIDi"),
-    il2cpp_custom_attrs_from_method: () => Il2Cpp.module.findExportByName("EPocrRegPIW"),
-    il2cpp_custom_attrs_from_field: () => Il2Cpp.module.findExportByName("tTLVNRzicey"),
-    il2cpp_custom_attrs_get_attr: () => Il2Cpp.module.findExportByName("BLoGheySOzH"),
-    il2cpp_custom_attrs_has_attr: () => Il2Cpp.module.findExportByName("_PzZsYLCfHG"),
-    il2cpp_custom_attrs_construct: () => Il2Cpp.module.findExportByName("tvApnPTnqoh"),
-    il2cpp_custom_attrs_free: () => Il2Cpp.module.findExportByName("qtCONZ_tYGN"),
-    il2cpp_class_set_userdata: () => Il2Cpp.module.findExportByName("HKIGZpfqpLr"),
-    il2cpp_class_get_userdata_offset: () => Il2Cpp.module.findExportByName("ytKohcDxxVv"),
-    il2cpp_set_default_thread_affinity: () => Il2Cpp.module.findExportByName("ykqLgyeVUwv"),
-    il2cpp_unity_set_android_network_up_state_func: () => Il2Cpp.module.findExportByName("tLqKhjbNCHQ"),
-};
+
 
 
 function getPlayerName(p: any): string {
@@ -992,6 +757,10 @@ let _dupeLoopDelay = 0;
 let _vacuumGunDelay = 0;
 let _drunkGunDelay = 0;
 let nukeDelayMs = 2000;
+// ── Grab Players state ───────────────────────────────────────────────────────
+let _grabPlayerBlock: any = null;       // the spawned network object
+let _grabPlayerTarget: any = null;      // the grabbed NetPlayer
+let _grabPlayerPrevGrip: boolean = false; // edge-detect for right grip
 // ────────────────────────────────────────────────────────────────────────────
 
 let bgColor: [number, number, number, number] = [0.02, 0.05, 0.25, 0.85];
@@ -1127,7 +896,14 @@ let textMenuPrevTrigger: boolean = false; // edge-detect for trigger home
 let textMenuRoot: any = null;           // the text-menu root GameObject
 // ─────────────────────────────────────────────────────────────────────────────
 const prefabIDs: string[] = [
-
+    "Vehicle_Spaceship_1",
+    "Vehicle_Spaceship_2",
+    "Vehicle_Spaceship_3",
+    "Vehicle_Spaceship_4",
+    "Vehicle_Spaceship_5",
+    "Vehicle_Spaceship_6",
+    "Vehicle_Spaceship_7",
+    "Vehicle_Spacebike_B",
     "Shipwheel",
     "TeleportMachine",
     "FourLeafQuest_FourLeafSpawner",
@@ -6657,7 +6433,7 @@ Il2Cpp.perform(() => {
                                 pRef = rig.method("get_playerRef").invoke();
                                 playerId = pRef.method("get_PlayerId").invoke();
                             } catch (err) {
-                                try { playerId = rig.field("playerID").value; } catch (e) {}
+                                try { playerId = rig.field("playerID").value; } catch (e) { }
                             }
 
                             // 1. NetSessionRPCs.RPC_NotifyYeetStarted
@@ -6665,27 +6441,27 @@ Il2Cpp.perform(() => {
                                 if (netinst) {
                                     netinst.method("RPC_NotifyYeetStarted").invoke(playerId, 0);
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
 
                             // 2. SplineUsernameDisplay.RPC_TriggerYeet
                             try {
                                 if (splines) {
-                                    for(let s = 0; s < splines.length; s++) {
-                                        try { splines.get(s).method("RPC_TriggerYeet").invoke(playerId); } catch(e){}
-                                        try { splines.get(s).method("RPC_TriggerYeet").invoke(pRef); } catch(e){}
+                                    for (let s = 0; s < splines.length; s++) {
+                                        try { splines.get(s).method("RPC_TriggerYeet").invoke(playerId); } catch (e) { }
+                                        try { splines.get(s).method("RPC_TriggerYeet").invoke(pRef); } catch (e) { }
                                     }
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
 
                             // 3. SmileyController.RPC_RequestYeet
                             try {
                                 if (smileys) {
-                                    for(let s = 0; s < smileys.length; s++) {
-                                        try { smileys.get(s).method("RPC_RequestYeet").invoke(playerId); } catch(e){}
-                                        try { smileys.get(s).method("RPC_RequestYeet").invoke(pRef); } catch(e){}
+                                    for (let s = 0; s < smileys.length; s++) {
+                                        try { smileys.get(s).method("RPC_RequestYeet").invoke(playerId); } catch (e) { }
+                                        try { smileys.get(s).method("RPC_RequestYeet").invoke(pRef); } catch (e) { }
                                     }
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                             // 4. All NetPlayer RPCs
                             try {
                                 const Vector3Class = AssemblyCSharp.class("UnityEngine.Vector3") || Il2Cpp.domain.assembly("UnityEngine.CoreModule").image.class("UnityEngine.Vector3");
@@ -6696,7 +6472,7 @@ Il2Cpp.perform(() => {
                                     if (meth.name.startsWith("RPC_") && !meth.name.includes("Invoker")) {
                                         try {
                                             const args = [];
-                                            for(let p=0; p<meth.parameterCount; p++) {
+                                            for (let p = 0; p < meth.parameterCount; p++) {
                                                 const tName = meth.parameters[p].type.name;
                                                 if (tName.includes("Int")) args.push(100);
                                                 else if (tName.includes("Single") || tName.includes("Float")) args.push(100.0);
@@ -6706,10 +6482,10 @@ Il2Cpp.perform(() => {
                                                 else args.push(null);
                                             }
                                             rig.method(meth.name).invoke(...args);
-                                        } catch(e) {}
+                                        } catch (e) { }
                                     }
                                 }
-                            } catch(e) {}
+                            } catch (e) { }
 
                             count++;
                         }
@@ -7245,6 +7021,32 @@ Il2Cpp.perform(() => {
                 toolTip: "Point at any player, pull trigger to deal 50 damage (hold grip)."
             }),
             new ButtonInfo({
+                buttonText: "Spawn Prefab",
+                isTogglable: false,
+                method: () => {
+                    try {
+                        // Get the name from your list
+                        const name = prefabIDs[prefabIndex];
+
+                        // Get your right hand's transform data
+                        const position = rightHandTransform.method("get_position").invoke();
+                        const rotation = rightHandTransform.method("get_rotation").invoke();
+
+                        // Spawn the prefab
+                        const result = spawnNetworkPrefab(name, position, rotation);
+
+                        if (result && !result.isNull()) {
+                            sendNotification("Spawned: " + name, false);
+                        } else {
+                            sendNotification("Failed to spawn: " + name, false);
+                        }
+                    } catch (e) {
+                        smartError("Spawn error:", e);
+                    }
+                },
+                toolTip: "Spawns the currently selected prefab at your right hand instantly."
+            }),
+            new ButtonInfo({
                 buttonText: "Attach Gun (Mommy2hp)",
                 isTogglable: true,
                 method: () => {
@@ -7398,6 +7200,152 @@ Il2Cpp.perform(() => {
                 },
                 toolTip: "Spawns ONE object and attaches every player to it. Press again to re-attach."
             }),
+
+            // ── GRAB PLAYERS ─────────────────────────────────────────────────
+            new ButtonInfo({
+                buttonText: "Grab Players",
+                isTogglable: true,
+                enableMethod: () => {
+                    // Reset state when toggled on
+                    _grabPlayerBlock = null;
+                    _grabPlayerTarget = null;
+                    _grabPlayerPrevGrip = false;
+                },
+                disableMethod: () => {
+                    // Clean up block if still held when toggled off
+                    if (_grabPlayerBlock && !_grabPlayerBlock.isNull()) {
+                        try {
+                            const rrunner = PrefabGen.field("_instance").value.method("get_runner").invoke();
+                            if (rrunner && !rrunner.isNull()) {
+                                const netObj = _grabPlayerBlock.method("get_Object").invoke();
+                                if (netObj && !netObj.isNull()) rrunner.method("Despawn").invoke(netObj);
+                            }
+                        } catch (_) { }
+                    }
+                    _grabPlayerBlock = null;
+                    _grabPlayerTarget = null;
+                    _grabPlayerPrevGrip = false;
+                },
+                method: () => {
+                    const gripDown = rightGrab;
+                    const gripEdge = gripDown && !_grabPlayerPrevGrip;   // just pressed this frame
+                    const gripReleased = !gripDown && _grabPlayerPrevGrip; // just released
+
+                    // ── On grip press: find nearest player to right hand ──────
+                    if (gripEdge) {
+                        try {
+                            const handPos = rightHandTransform.method("get_position").invoke();
+                            const allPlayers = Object.method("FindObjectsByType", 1).inflate(NetPlayer).invoke(0);
+                            let nearest: any = null;
+                            let nearestDist = 1.5; // only grab if within 1.5 units
+                            for (let i = 0; i < allPlayers.length; i++) {
+                                try {
+                                    const p = allPlayers.get(i);
+                                    if (!p || p.isNull()) continue;
+                                    if (playerIsLocal(p)) continue;
+                                    const pPos = getTransform(p).method("get_position").invoke();
+                                    const d = Vector3.method("Distance").invoke(pPos, handPos) as number;
+                                    if (d < nearestDist) { nearestDist = d; nearest = p; }
+                                } catch (_) { }
+                            }
+
+                            if (!nearest) {
+                                sendNotification("No player close enough to grab!", false);
+                            } else {
+                                // Spawn tiny block at hand position
+                                const spawnPos = rightHandTransform.method("get_position").invoke();
+                                const spawnedObj = spawnNetworkPrefab("EscherToyBlockObject", spawnPos, identityQuaternion);
+                                if (!spawnedObj || spawnedObj.isNull()) {
+                                    sendNotification("Grab: spawn failed", false);
+                                } else {
+                                    // Use same scaleModifier as attach gun but way more extreme (-2000 vs -100)
+                                    try {
+                                        const gbo = spawnedObj.method("GetComponent", 1).inflate(GBOClass).invoke();
+                                        if (gbo && !gbo.isNull()) gbo.method("set_scaleModifier").invoke(-120);
+                                    } catch (_) { }
+
+                                    const go = spawnedObj.method("get_gameObject").invoke();
+                                    if (go && !go.isNull()) {
+                                        // Make fully kinematic, no gravity, no spin
+                                        try {
+                                            const rb = getComponent(go, Rigidbody);
+                                            if (rb && !rb.isNull()) {
+                                                rb.method("set_isKinematic").invoke(true);
+                                                rb.method("set_useGravity").invoke(false);
+                                                rb.method("set_velocity").invoke(zeroVector);
+                                                rb.method("set_angularVelocity").invoke(zeroVector);
+                                            }
+                                        } catch (_) { }
+
+                                        // Make all colliders triggers — can't push the local player
+                                        try {
+                                            const cols = go.method("GetComponentsInChildren", 1)
+                                                .inflate(Collider).invoke(true);
+                                            if (cols && !cols.isNull()) {
+                                                for (let ci = 0; ci < cols.length; ci++) {
+                                                    try { cols.get(ci).method("set_isTrigger").invoke(true); } catch (_) { }
+                                                }
+                                            }
+                                        } catch (_) { }
+                                    }
+
+                                    // Attach the player to the invisible block
+                                    attachPlayerToPrefab(nearest, spawnedObj);
+                                    _grabPlayerBlock = spawnedObj;
+                                    _grabPlayerTarget = nearest;
+                                    sendNotification("Grabbed: " + getPlayerName(nearest), false);
+                                }
+                            }
+                        } catch (e) { smartError("GrabPlayers:grab", e); }
+                    }
+
+                    // ── While grip held: move block to right hand every frame ──
+                    if (gripDown && _grabPlayerBlock && !_grabPlayerBlock.isNull()) {
+                        try {
+                            const handPos = rightHandTransform.method("get_position").invoke();
+                            const blockGO = _grabPlayerBlock.method("get_gameObject").invoke();
+                            if (blockGO && !blockGO.isNull()) {
+                                getTransform(blockGO).method("set_position").invoke(handPos);
+                                // Freeze rigidbody completely every frame (prevents spin)
+                                try {
+                                    const rb = getComponent(blockGO, Rigidbody);
+                                    if (rb && !rb.isNull()) {
+                                        rb.method("set_velocity").invoke(zeroVector);
+                                        rb.method("set_angularVelocity").invoke(zeroVector);
+                                    }
+                                } catch (_) { }
+                            }
+                        } catch (e) { /* silent */ }
+                    }
+
+                    // ── On grip release: teleport player to hand pos, then despawn block ──
+                    if (gripReleased && _grabPlayerBlock && !_grabPlayerBlock.isNull()) {
+                        // First, teleport the grabbed player to wherever the hand is right now
+                        try {
+                            if (_grabPlayerTarget && !_grabPlayerTarget.isNull()) {
+                                const releasePos = rightHandTransform.method("get_position").invoke();
+                                try { _grabPlayerTarget.method("RPC_Teleport").invoke(releasePos); } catch (_) { }
+                            }
+                        } catch (_) { }
+                        // Then despawn the invisible block
+                        try {
+                            const rrunner = PrefabGen.field("_instance").value.method("get_runner").invoke();
+                            if (rrunner && !rrunner.isNull()) {
+                                const netObj = _grabPlayerBlock.method("get_Object").invoke();
+                                if (netObj && !netObj.isNull()) rrunner.method("Despawn").invoke(netObj);
+                            }
+                        } catch (_) { }
+                        _grabPlayerBlock = null;
+                        _grabPlayerTarget = null;
+                        sendNotification("Released player", false);
+                    }
+
+                    _grabPlayerPrevGrip = gripDown;
+                },
+                toolTip: "Hold right grip near a player to grab them. Invisible block follows your hand. Release grip to teleport them to your hand position."
+            }),
+            // ─────────────────────────────────────────────────────────────────
+
             new ButtonInfo({
                 buttonText: "Money Gun",
                 isTogglable: true,
