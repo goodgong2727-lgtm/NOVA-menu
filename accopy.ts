@@ -711,7 +711,7 @@ const setRigidbodyVelocity = (rb: any, velocity: any) => {
     }
 };
 const version = "1.0.0";
-const menuName = "guns.lol/novarr";
+const menuName = "NOVA.lol";
 
 let menu = null;
 let reference = null;
@@ -763,11 +763,12 @@ let _grabPlayerTarget: any = null;      // the grabbed NetPlayer
 let _grabPlayerPrevGrip: boolean = false; // edge-detect for right grip
 // ────────────────────────────────────────────────────────────────────────────
 
-let bgColor: [number, number, number, number] = [0.02, 0.05, 0.25, 0.85];
+let bgColor: [number, number, number, number] = [1.0, 0.4, 0.7, 0.85];
 let textColor: [number, number, number, number] = [0.80, 0.88, 1.00, 1.0];
-let buttonColor: [number, number, number, number] = [0.10, 0.18, 0.55, 0.85];
-let buttonPressedColor: [number, number, number, number] = [0.25, 0.45, 1.00, 1.0];
+let buttonColor: [number, number, number, number] = [0.85, 0.2, 0.55, 0.85];
+let buttonPressedColor: [number, number, number, number] = [1.0, 0.10, 0.65, 1.0];
 let menuAnimTime: number = 0;
+let balloonNovaObjects: { obj: any, baseX: number, baseY: number, baseZ: number, phase: number }[] = [];
 let themeMode: number = 0;
 let rainbowStep: number = 0;
 const rainbowPresets: [number, number, number][] = [
@@ -813,7 +814,12 @@ let lagGunDelay = 0;
 let mobGunDelay = 0;
 let idGunDelay = 0;
 let netplrs: any[] = [];
-let plSelectedIndex: number = -1;   // index into live player list, -1 = none selected
+let plSelectedIndex: number = -1;
+let plCurrentPage: number = 0;
+let showPlayerList: boolean = true;
+let isMenuOpening: boolean = false;
+let lastMenuPos: any = null;
+let lastMenuRot: any = null;   // index into live player list, -1 = none selected
 let plSelectedRig: any = null;       // cached NetPlayer ref for the selected entry
 let disintegratingPlayers: { rig: any, startTime: number }[] = [];
 let nameTagObjects: { rig: any; tagRoot: any }[] = [];  // floating name tags
@@ -882,6 +888,9 @@ let imguiPointerLineGO: any = null;
 let imguiPointerLineRenderer: any = null;
 let menuSnapNextFrame: boolean = false;
 let imguiMenuToggled: boolean = false;
+let imguiAnimProg: number = 0.0;
+let imguiWorldSpace: boolean = false;
+let imguiShowPointerLine: boolean = true;
 let imguiFixedPos: [number, number, number] | null = null;
 let imguiFixedRot: any = null;
 let prevMenuKeyBtn: boolean = false;
@@ -1063,8 +1072,23 @@ let teleportNetObjList: { obj: any; name: string }[] = [];
 let teleportNetObjIndex: number = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 
-Il2Cpp.perform(() => {
+Il2Cpp.perform(async () => {
 
+    // Wait until the IL2CPP domain is fully loaded before doing anything
+    // This lets the menu inject at any time, not just at the perfect moment
+    let domainReady = false;
+    while (!domainReady) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+            const testImage = Il2Cpp.domain.assembly("AnimalCompany").image;
+            if (!testImage || testImage.isNull()) continue;
+            // Also check that the player class instance exists — avoids access violations on late inject
+            const testPlayerClass = testImage.class("AnimalCompany.GorillaLocomotion");
+            const testPlayer = testPlayerClass.field("<Instance>k__BackingField").value;
+            if (testPlayer && !testPlayer.isNull()) domainReady = true;
+        } catch (_) {}
+    }
+    console.log("[NOVA] Domain + player ready — initializing menu...");
 
     const images = {
         "AnimalCompany": Il2Cpp.domain.assembly("AnimalCompany").image,
@@ -1761,7 +1785,7 @@ Il2Cpp.perform(() => {
         rectTransform.method("set_rotation").invoke(Quaternion.method("Euler").invoke(180.0, 90.0, 90.0));
     }
     // At the top of your NEW file: Tell TypeScript these global game utilities exist
-    let bgColor2: [number, number, number, number] = [0.0, 0.5, 1.0, 1.0]; // blue
+    let bgColor2: [number, number, number, number] = [0.0, 1.0, 1.0, 1.0]; // blue
 
     // 1. Export the State Authority function
     function tryTeleportNetPlayer(target: any, worldPos: any): boolean {
@@ -2202,10 +2226,10 @@ Il2Cpp.perform(() => {
         menu = createObject(zeroVector, identityQuaternion, [0.1, 0.3, 0.3825], 3, [0, 0, 0, 0]);
         Destroy(getComponent(menu, BoxCollider));
 
-        const menuBackground = createObject([0.1, 0, 0], identityQuaternion, [0.1, 1, 1], 3, bgColor, getTransform(menu));
+        const menuBackground = createObject([0.1, 0, 0], identityQuaternion, [0.1, 0.86, 0.7], 3, bgColor, getTransform(menu));
         Destroy(getComponent(menuBackground, BoxCollider));
 
-        const menuBackground2 = createObject([0.1, 0, 0], identityQuaternion, [0.09, 1.02, 1.02], 3, bgColor2, getTransform(menu));
+        const menuBackground2 = createObject([0.1, 0, 0], identityQuaternion, [0.09, 0.88, 0.72], 3, bgColor2, getTransform(menu));
         Destroy(getComponent(menuBackground2, BoxCollider));
 
         const canvasObject = createObject(zeroVector, identityQuaternion, oneVector, 3, [0, 0, 0, 0], getTransform(menu));
@@ -2216,49 +2240,58 @@ Il2Cpp.perform(() => {
         canvas.method("set_renderMode").invoke(2);
         canvasScaler.method("set_dynamicPixelsPerUnit").invoke(1000.0);
 
-        renderMenuText(canvasObject, menuName + ` [${currentPage + 1}]`, textColor, [0.11, 0, 0.175], [1, 0.1]);
+        const homeButton = createObject([0.1, -0.06, 0.205], identityQuaternion, [0.09, 0.2682, 0.075], 3, buttonColor, getTransform(menu));
+        const homeButton2 = createObject([0.1, -0.06, 0.205], identityQuaternion, [0.08, 0.3, 0.1], 3, bgColor2, getTransform(menu));
+        homeButton.method("set_name").invoke(Il2Cpp.string("@Home"));
+        addComponent(homeButton, GorillaReportButton);
+        getComponent(homeButton, BoxCollider).method("set_isTrigger").invoke(true);
+        renderMenuText(canvasObject, "Home", textColor, [0.105, -0.06, 0.205], [0.15, 0.15]);
+
+        const leaveButton = createObject([0.1, 0.06, 0.205], identityQuaternion, [0.09, 0.2682, 0.075], 3, buttonColor, getTransform(menu));
+        const leaveButton2 = createObject([0.1, 0.06, 0.205], identityQuaternion, [0.08, 0.3, 0.1], 3, bgColor2, getTransform(menu));
+        leaveButton.method("set_name").invoke(Il2Cpp.string("@Disconnect"));
+        addComponent(leaveButton, GorillaReportButton);
+        getComponent(leaveButton, BoxCollider).method("set_isTrigger").invoke(true);
+        renderMenuText(canvasObject, "Leave", textColor, [0.105, 0.06, 0.205], [0.15, 0.15]);
+
+
+
+        renderMenuText(canvasObject, "guns.lol/novarr, AngelVR2 is a skid", textColor, [0.107, 0, -0.120], [0.5, 0.5]);
+        renderMenuText(canvasObject, menuName + ` - Page [ <color=cyan>${currentPage + 1}</color> ]`, textColor, [0.11, 0, 0.155], [1, 0.1]);
 
         if (time > notifactionResetTime) currentNotification = "";
         renderMenuText(canvasObject, currentNotification, textColor, [0.11, 0, 0.275], [1, 0.1]);
 
-        const disconnectButton = createObject([0.1, 0.0, 0.225], identityQuaternion, [0.09, 0.9, 0.08], 3, buttonColor, getTransform(menu), true);
-        disconnectButton.method("set_name").invoke(Il2Cpp.string("@Disconnect"));
-        addComponent(disconnectButton, GorillaReportButton);
-        getComponent(disconnectButton, BoxCollider).method("set_isTrigger").invoke(true);
-        renderMenuText(canvasObject, "Disconnect", textColor, [0.11, 0, 0.225], [1, 0.1]);
-
-        const returnButton = createObject([0.1, -0.175, -0.225], identityQuaternion, [0.09, 0.09, 0.09], 3, buttonColor, getTransform(menu));
-        returnButton.method("set_name").invoke(Il2Cpp.string("@GlobalReturn"));
-        addComponent(returnButton, GorillaReportButton);
-        getComponent(returnButton, BoxCollider).method("set_isTrigger").invoke(true);
-        renderMenuText(canvasObject, "<", textColor, [0.11, -0.175, -0.225], [1, 0.1]);
-
         {
-            const pageButton = createObject([0.1, 0.2, 0], identityQuaternion, [0.09, 0.2, 0.9], 3, buttonColor, getTransform(menu));
+            const pageButton = createObject([0.1, 0.17, 0], identityQuaternion, [0.09, 0.15, 0.58], 3, buttonColor, getTransform(menu));
+            const pageButton2 = createObject([0.1, 0.17, 0], identityQuaternion, [0.08, 0.16, 0.59], 3, bgColor2, getTransform(menu));
             pageButton.method("set_name").invoke(Il2Cpp.string("@PreviousPage"));
             addComponent(pageButton, GorillaReportButton);
             getComponent(pageButton, BoxCollider).method("set_isTrigger").invoke(true);
-            renderMenuText(canvasObject, "<", textColor, [0.11, 0.2, 0], [1, 0.1]);
+            renderMenuText(canvasObject, "←", textColor, [0.11, 0.17, 0], [1, 0.1]);
         }
         {
-            const pageButton = createObject([0.1, -0.2, 0], identityQuaternion, [0.09, 0.2, 0.9], 3, buttonColor, getTransform(menu));
+            const pageButton = createObject([0.1, -0.17, 0], identityQuaternion, [0.09, 0.15, 0.58], 3, buttonColor, getTransform(menu));
+            const pageButton2 = createObject([0.1, -0.17, 0], identityQuaternion, [0.08, 0.16, 0.59], 3, bgColor2, getTransform(menu));
             pageButton.method("set_name").invoke(Il2Cpp.string("@NextPage"));
             addComponent(pageButton, GorillaReportButton);
             getComponent(pageButton, BoxCollider).method("set_isTrigger").invoke(true);
-            renderMenuText(canvasObject, ">", textColor, [0.11, -0.2, 0], [1, 0.1]);
+            renderMenuText(canvasObject, "→", textColor, [0.11, -0.17, 0], [1, 0.1]);
         }
 
         let i = 0;
-        const targetMods = buttons[currentCategory].filter((b: any) => !b.imguiOnly).slice(currentPage * 8).slice(0, 8);
+        const targetMods = buttons[currentCategory].filter((b: any) => !b.imguiOnly).slice(currentPage * 6).slice(0, 6);
         targetMods.forEach((buttonData) => {
-            const button = createObject([0.105, 0, 0.13 - (i * 0.04)], identityQuaternion, [0.09, 0.9, 0.08], 3, buttonColor, getTransform(menu));
+            const button = createObject([0.105, 0, 0.11 - (i * 0.04)], identityQuaternion, [0.09, 0.7, 0.07], 3, buttonColor, getTransform(menu));
+            const button2 = createObject([0.105, 0, 0.11 - (i * 0.04)], identityQuaternion, [0.08, 0.72, 0.08], 3, bgColor2, getTransform(menu));
             button.method("set_name").invoke(Il2Cpp.string("@" + buttonData.buttonText));
             addComponent(button, GorillaReportButton);
             getComponent(button, BoxCollider).method("set_isTrigger").invoke(true);
-            renderMenuText(canvasObject, buttonData.buttonText, textColor, [0.11, 0, 0.13 - (i * 0.04)], [1, 0.1]);
+            renderMenuText(canvasObject, buttonData.buttonText, textColor, [0.11, 0, 0.11 - (i * 0.04)], [1, 0.1]);
             updateButtonColor(button, buttonData, i);
             i++;
         });
+
 
         // ── Text Menu indicator (shown when text mode is on) ─────────────────
         if (textMenuMode) {
@@ -2267,7 +2300,7 @@ Il2Cpp.perform(() => {
 
 
         // ── Player Mini-Menu (RIGHT side of main menu) ──────────────────────
-        {
+        if (showPlayerList) {
             // ── 1. Gather live player list ────────────────────────────────────
             interface PlEntry2 { rig: any; name: string; isLocal: boolean; }
             const plEntries: PlEntry2[] = [];
@@ -2295,9 +2328,12 @@ Il2Cpp.perform(() => {
             // Panel sits at Y = -0.36, width 0.38 in Y-local units.
             const panelOffsetY = -0.36; // Moved closer
             const rowH = 0.055;   // bigger rows than main menu (0.04 → 0.055)
+            const pageEntriesCount = Math.min(Math.max(plEntries.length - plCurrentPage * 4, 0), 4);
+            const hasPagination = plEntries.length > 4;
+            const hasAll = plCurrentPage === 0;
             const totalRows = inActionView
-                ? 6   // header + back + actions
-                : Math.max(plEntries.length + 2, 3);  // header + "All" button + names
+                ? 6
+                : Math.max((1 + (hasAll ? 1 : 0) + pageEntriesCount + (hasPagination ? 1 : 0)), 3);  // header + "All" button + names
             const panelHeightU = totalRows * rowH + 0.025;
             const panelScaleZ = panelHeightU / 0.3825;
 
@@ -2305,7 +2341,7 @@ Il2Cpp.perform(() => {
             const plBg = createObject(
                 [0.1, panelOffsetY, 0], identityQuaternion,
                 [0.10, 0.40, panelScaleZ], 3,
-                [0.02, 0.04, 0.18, 0.92], getTransform(menu)
+                bgColor as [number, number, number, number], getTransform(menu)
             );
             Destroy(getComponent(plBg, BoxCollider));
 
@@ -2347,12 +2383,9 @@ Il2Cpp.perform(() => {
                 // ── Back button ───────────────────────────────────────────────
                 const backKey = "__pl_back";
                 {
-                    const backBtn = createObject(
-                        [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                        [0.09, 0.37, rowH * 0.88], 3,
-                        [0.12, 0.12, 0.30, 0.95] as [number, number, number, number],
-                        getTransform(menu), true
-                    );
+                    const backBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.12, 0.12, 0.30, 0.95] as [number, number, number, number], getTransform(menu), true);
+                    const backBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                    Destroy(getComponent(backBtn_outline, BoxCollider));
                     backBtn.method("set_name").invoke(Il2Cpp.string("@" + backKey));
                     addComponent(backBtn, GorillaReportButton);
                     getComponent(backBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2372,12 +2405,9 @@ Il2Cpp.perform(() => {
                     // 1. Bring All
                     const bringAllKey = "__pl_bringall";
                     {
-                        const bringAllBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            buttonColor as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const bringAllBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const bringAllBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(bringAllBtn_outline, BoxCollider));
                         bringAllBtn.method("set_name").invoke(Il2Cpp.string("@" + bringAllKey));
                         addComponent(bringAllBtn, GorillaReportButton);
                         getComponent(bringAllBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2407,12 +2437,9 @@ Il2Cpp.perform(() => {
                     // 2. Kick All
                     const kickAllKey = "__pl_kickall";
                     {
-                        const kickAllBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            [0.45, 0.04, 0.04, 0.95] as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const kickAllBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.45, 0.04, 0.04, 0.95] as [number, number, number, number], getTransform(menu), true);
+                        const kickAllBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(kickAllBtn_outline, BoxCollider));
                         kickAllBtn.method("set_name").invoke(Il2Cpp.string("@" + kickAllKey));
                         addComponent(kickAllBtn, GorillaReportButton);
                         getComponent(kickAllBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2441,12 +2468,9 @@ Il2Cpp.perform(() => {
                     // 3. Disintegrate All
                     const disAllKey = "__pl_disintegrateall";
                     {
-                        const disAllBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            [0.30, 0.0, 0.50, 0.95] as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const disAllBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.30, 0.0, 0.50, 0.95] as [number, number, number, number], getTransform(menu), true);
+                        const disAllBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(disAllBtn_outline, BoxCollider));
                         disAllBtn.method("set_name").invoke(Il2Cpp.string("@" + disAllKey));
                         addComponent(disAllBtn, GorillaReportButton);
                         getComponent(disAllBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2477,12 +2501,9 @@ Il2Cpp.perform(() => {
                     // 4. TP & Freeze All
                     const tpFreezeAllKey = "__pl_tpfreezeall";
                     {
-                        const tpFreezeAllBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            [0.0, 0.45, 0.45, 0.95] as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const tpFreezeAllBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.0, 0.45, 0.45, 0.95] as [number, number, number, number], getTransform(menu), true);
+                        const tpFreezeAllBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(tpFreezeAllBtn_outline, BoxCollider));
                         tpFreezeAllBtn.method("set_name").invoke(Il2Cpp.string("@" + tpFreezeAllKey));
                         addComponent(tpFreezeAllBtn, GorillaReportButton);
                         getComponent(tpFreezeAllBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2511,12 +2532,9 @@ Il2Cpp.perform(() => {
                     // ── TP to Player ───────────────────────────────────────────────
                     const tpToKey = "__pl_tpto";
                     {
-                        const tpBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            buttonColor as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const tpBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const tpBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(tpBtn_outline, BoxCollider));
                         tpBtn.method("set_name").invoke(Il2Cpp.string("@" + tpToKey));
                         addComponent(tpBtn, GorillaReportButton);
                         getComponent(tpBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2539,12 +2557,9 @@ Il2Cpp.perform(() => {
                     // ── TP to Me ───────────────────────────────────────────────────
                     const tpMeKey = "__pl_tpme";
                     {
-                        const tpMeBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            buttonColor as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const tpMeBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const tpMeBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(tpMeBtn_outline, BoxCollider));
                         tpMeBtn.method("set_name").invoke(Il2Cpp.string("@" + tpMeKey));
                         addComponent(tpMeBtn, GorillaReportButton);
                         getComponent(tpMeBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2567,12 +2582,9 @@ Il2Cpp.perform(() => {
                     // ── Kick ────────────────────────────────────────────────────────
                     const kickKey = "__pl_kick";
                     {
-                        const kickBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            [0.45, 0.04, 0.04, 0.95] as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const kickBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.45, 0.04, 0.04, 0.95] as [number, number, number, number], getTransform(menu), true);
+                        const kickBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(kickBtn_outline, BoxCollider));
                         kickBtn.method("set_name").invoke(Il2Cpp.string("@" + kickKey));
                         addComponent(kickBtn, GorillaReportButton);
                         getComponent(kickBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2597,12 +2609,9 @@ Il2Cpp.perform(() => {
                     // ── Disintegrate ────────────────────────────────────────────────
                     const disKey = "__pl_disintegrate";
                     {
-                        const disBtn = createObject(
-                            [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                            [0.09, 0.37, rowH * 0.88], 3,
-                            [0.30, 0.0, 0.50, 0.95] as [number, number, number, number],
-                            getTransform(menu), true
-                        );
+                        const disBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.30, 0.0, 0.50, 0.95] as [number, number, number, number], getTransform(menu), true);
+                        const disBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(disBtn_outline, BoxCollider));
                         disBtn.method("set_name").invoke(Il2Cpp.string("@" + disKey));
                         addComponent(disBtn, GorillaReportButton);
                         getComponent(disBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2638,12 +2647,9 @@ Il2Cpp.perform(() => {
                 // "★ ALL (OTHERS)" button
                 const allBtnKey = "__pl_select_all";
                 {
-                    const allBtn = createObject(
-                        [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                        [0.09, 0.37, rowH * 0.88], 3,
-                        [0.0, 0.5, 0.8, 0.95] as [number, number, number, number],
-                        getTransform(menu), true
-                    );
+                    const allBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, [0.0, 0.5, 0.8, 0.95] as [number, number, number, number], getTransform(menu), true);
+                    const allBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                    Destroy(getComponent(allBtn_outline, BoxCollider));
                     allBtn.method("set_name").invoke(Il2Cpp.string("@" + allBtnKey));
                     addComponent(allBtn, GorillaReportButton);
                     getComponent(allBtn, BoxCollider).method("set_isTrigger").invoke(true);
@@ -2662,36 +2668,77 @@ Il2Cpp.perform(() => {
                 if (plEntries.length === 0) {
                     renderMenuText(plCanvas, "No players", [0.5, 0.5, 0.5, 1.0],
                         [0.11, panelOffsetY, rowCursor], [0.38, 0.10]);
-                }
+                } else {
+                    const maxPlPages = Math.ceil(plEntries.length / 4);
+                    if (plCurrentPage >= maxPlPages) plCurrentPage = maxPlPages - 1;
+                    if (plCurrentPage < 0) plCurrentPage = 0;
 
-                for (let pi = 0; pi < plEntries.length; pi++) {
-                    const entry = plEntries[pi];
-                    const btnKey = "__pl_select_" + pi;
-                    const label = (entry.isLocal ? "★ " : "") + entry.name;
+                    const pageEntries = plEntries.slice(plCurrentPage * 4, plCurrentPage * 4 + 4);
 
-                    const plBtn = createObject(
-                        [0.105, panelOffsetY, rowCursor], identityQuaternion,
-                        [0.09, 0.37, rowH * 0.88], 3,
-                        buttonColor as [number, number, number, number],
-                        getTransform(menu), true
-                    );
-                    plBtn.method("set_name").invoke(Il2Cpp.string("@" + btnKey));
-                    addComponent(plBtn, GorillaReportButton);
-                    getComponent(plBtn, BoxCollider).method("set_isTrigger").invoke(true);
-                    renderMenuText(plCanvas, label, textColor, [0.11, panelOffsetY, rowCursor], [0.38, 0.10]);
+                    for (let pi = 0; pi < pageEntries.length; pi++) {
+                        const entry = pageEntries[pi];
+                        const globalPi = plCurrentPage * 4 + pi;
+                        const btnKey = "__pl_select_" + globalPi;
+                        const label = (entry.isLocal ? "★ " : "") + entry.name;
 
-                    const _pi = pi;
-                    const _entry = entry;
-                    buttonMap.set(btnKey, new ButtonInfo({
-                        buttonText: btnKey, isTogglable: false,
-                        method: () => {
-                            plSelectedIndex = _pi;
-                            plSelectedRig = _entry.rig;
-                            reloadMenu();
-                        }
-                    }));
+                        const plBtn = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.09, 0.37, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const plBtn_outline = createObject([0.105, panelOffsetY, rowCursor], identityQuaternion, [0.08, (0.37) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(plBtn_outline, BoxCollider));
+                        plBtn.method("set_name").invoke(Il2Cpp.string("@" + btnKey));
+                        addComponent(plBtn, GorillaReportButton);
+                        getComponent(plBtn, BoxCollider).method("set_isTrigger").invoke(true);
+                        renderMenuText(plCanvas, label, textColor, [0.11, panelOffsetY, rowCursor], [0.38, 0.10]);
 
-                    rowCursor -= rowH;
+                        const _pi = globalPi;
+                        const _entry = entry;
+                        buttonMap.set(btnKey, new ButtonInfo({
+                            buttonText: btnKey, isTogglable: false,
+                            method: () => {
+                                plSelectedIndex = _pi;
+                                plSelectedRig = _entry.rig;
+                                reloadMenu();
+                            }
+                        }));
+
+                        rowCursor -= rowH;
+                    }
+
+                    if (maxPlPages > 1) {
+                        const prevBtnKey = "__pl_prev";
+                        const nextBtnKey = "__pl_next";
+
+                        const prevBtn = createObject([0.105, panelOffsetY + 0.1, rowCursor], identityQuaternion, [0.09, 0.15, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const prevBtn_outline = createObject([0.105, panelOffsetY + 0.1, rowCursor], identityQuaternion, [0.08, (0.15) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(prevBtn_outline, BoxCollider));
+                        prevBtn.method("set_name").invoke(Il2Cpp.string("@" + prevBtnKey));
+                        addComponent(prevBtn, GorillaReportButton);
+                        getComponent(prevBtn, BoxCollider).method("set_isTrigger").invoke(true);
+                        renderMenuText(plCanvas, "<", textColor, [0.11, panelOffsetY + 0.1, rowCursor], [0.15, 0.10]);
+                        buttonMap.set(prevBtnKey, new ButtonInfo({
+                            buttonText: prevBtnKey, isTogglable: false,
+                            method: () => {
+                                plCurrentPage--;
+                                if (plCurrentPage < 0) plCurrentPage = maxPlPages - 1;
+                                reloadMenu();
+                            }
+                        }));
+
+                        const nextBtn = createObject([0.105, panelOffsetY - 0.1, rowCursor], identityQuaternion, [0.09, 0.15, rowH * 0.88], 3, buttonColor as [number, number, number, number], getTransform(menu), true);
+                        const nextBtn_outline = createObject([0.105, panelOffsetY - 0.1, rowCursor], identityQuaternion, [0.08, (0.15) + 0.02, (rowH * 0.88) + 0.01], 3, bgColor2, getTransform(menu), false);
+                        Destroy(getComponent(nextBtn_outline, BoxCollider));
+                        nextBtn.method("set_name").invoke(Il2Cpp.string("@" + nextBtnKey));
+                        addComponent(nextBtn, GorillaReportButton);
+                        getComponent(nextBtn, BoxCollider).method("set_isTrigger").invoke(true);
+                        renderMenuText(plCanvas, ">", textColor, [0.11, panelOffsetY - 0.1, rowCursor], [0.15, 0.10]);
+                        buttonMap.set(nextBtnKey, new ButtonInfo({
+                            buttonText: nextBtnKey, isTogglable: false,
+                            method: () => {
+                                plCurrentPage++;
+                                if (plCurrentPage >= maxPlPages) plCurrentPage = 0;
+                                reloadMenu();
+                            }
+                        }));
+                    }
                 }
             }
         }
@@ -2942,6 +2989,9 @@ Il2Cpp.perform(() => {
                         mat.method("set_color").invoke([0.70, 0.20, 1.0, 0.75]);
                     } catch (_) { }
                 }
+                if (imguiPointerLineGO && !imguiPointerLineGO.isNull?.()) {
+                    imguiPointerLineGO.method("SetActive").invoke(imguiShowPointerLine);
+                }
                 if (imguiPointerLineRenderer && !imguiPointerLineRenderer.isNull?.()) {
                     imguiPointerLineRenderer.method("SetPosition").invoke(0, rayO);
                     imguiPointerLineRenderer.method("SetPosition").invoke(1, hitWorld);
@@ -2969,30 +3019,49 @@ Il2Cpp.perform(() => {
     function imguiRecenterMenu() {
         try {
             const menuTransform = getTransform(menu);
-            if (!imguiFixedPos || !imguiFixedRot) {
-                const handTf = righthand ? rightHandTransform : leftHandTransform;
-                if (!handTf || handTf.isNull?.()) return;
-                const handPos = readVec3Components(handTf.method("get_position").invoke());
-                const handUp = readVec3Components(handTf.method("get_up").invoke());
-                // Raise higher than original BB5 (0.35 vs 0.12) for better readability
-                const lift = 0.35;
-                imguiFixedPos = [
-                    handPos[0] + handUp[0] * lift,
-                    handPos[1] + handUp[1] * lift,
-                    handPos[2] + handUp[2] * lift,
-                ];
-                try {
-                    if (headCollider && !headCollider.isNull?.()) {
-                        const headPos = readVec3Components(getTransform(headCollider).method("get_position").invoke());
-                        const awayFromHead: [number, number, number] = [imguiFixedPos[0] - headPos[0], imguiFixedPos[1] - headPos[1], imguiFixedPos[2] - headPos[2]];
-                        imguiFixedRot = Quaternion.method("LookRotation", 2).invoke(awayFromHead, [0, 1, 0]);
+            const handTf = righthand ? rightHandTransform : leftHandTransform;
+            if (!handTf || handTf.isNull?.()) return;
+
+            if (imguiWorldSpace) {
+                if (!imguiFixedPos || !imguiFixedRot) {
+                    const handPos = readVec3Components(handTf.method("get_position").invoke());
+                    const handUp = readVec3Components(handTf.method("get_up").invoke());
+                    // Raise higher than original BB5 (0.35 vs 0.12) for better readability
+                    const lift = 0.35;
+                    imguiFixedPos = [
+                        handPos[0] + handUp[0] * lift,
+                        handPos[1] + handUp[1] * lift,
+                        handPos[2] + handUp[2] * lift,
+                    ];
+                    try {
+                        if (headCollider && !headCollider.isNull?.()) {
+                            const headPos = readVec3Components(getTransform(headCollider).method("get_position").invoke());
+                            const awayFromHead: [number, number, number] = [imguiFixedPos[0] - headPos[0], imguiFixedPos[1] - headPos[1], imguiFixedPos[2] - headPos[2]];
+                            imguiFixedRot = Quaternion.method("LookRotation", 2).invoke(awayFromHead, [0, 1, 0]);
+                        }
+                    } catch (_) { }
+                    if (!imguiFixedRot) {
+                        const handRot = handTf.method("get_rotation").invoke();
+                        imguiFixedRot = Quaternion.method("op_Multiply").invoke(handRot, Quaternion.method("Euler").invoke(0, 180, 0));
                     }
-                } catch (_) { }
-                if (!imguiFixedRot) {
-                    const handRot = handTf.method("get_rotation").invoke();
-                    imguiFixedRot = Quaternion.method("op_Multiply").invoke(handRot, Quaternion.method("Euler").invoke(0, 180, 0));
                 }
+            } else {
+                const upVec = readVec3Components(handTf.method("get_up").invoke());
+                const forwardVec = readVec3Components(handTf.method("get_forward").invoke());
+                const handPos = readVec3Components(handTf.method("get_position").invoke());
+                imguiFixedPos = [
+                    handPos[0] + upVec[0] * 0.14 + forwardVec[0] * 0.08,
+                    handPos[1] + upVec[1] * 0.14 + forwardVec[1] * 0.08,
+                    handPos[2] + upVec[2] * 0.14 + forwardVec[2] * 0.08
+                ];
+                const handRot = handTf.method("get_rotation").invoke();
+                imguiFixedRot = Quaternion.method("op_Multiply").invoke(handRot, Quaternion.method("Euler").invoke(65.0, 180.0, 180.0));
             }
+
+            const p = imguiAnimProg;
+            const eased = 1.0 - (1.0 - p) * (1.0 - p) * (1.0 - p);
+            const targetScale = imguiCanvasScale * eased;
+            menuTransform.method("set_localScale").invoke([targetScale, targetScale, targetScale]);
 
             menuTransform.method("set_position").invoke(imguiFixedPos);
             menuTransform.method("set_rotation").invoke(imguiFixedRot);
@@ -3515,19 +3584,10 @@ Il2Cpp.perform(() => {
             } catch (_) { }
             const img = imguiAddImage(g, [0, 0, 0, 0]); imguiApplyRounded(img); return img;
         };
-        const cL = mkSeg("cL", 10, 2, -9, 0); const cR = mkSeg("cR", 10, 2, 9, 0);
-        const cU = mkSeg("cU", 2, 10, 0, 9); const cD = mkSeg("cD", 2, 10, 0, -9);
-        const cDot = mkSeg("cDot", 4, 4, 0, 0);
-        const ringGO2 = imguiCreateGO("cRing", imguiCursorRT);
-        try {
-            imguiCursorRingRT = imguiRT(ringGO2);
-            if (imguiCursorRingRT && !imguiCursorRingRT.isNull?.()) {
-                imguiCursorRingRT.method("set_anchorMin").invoke([0.5, 0.5]); imguiCursorRingRT.method("set_anchorMax").invoke([0.5, 0.5]);
-                imguiCursorRingRT.method("set_sizeDelta").invoke([20, 20]); imguiCursorRingRT.method("set_anchoredPosition").invoke([0, 0]);
-            }
-        } catch (_) { }
-        imguiCursorRingImg = imguiAddImage(ringGO2, [0, 0, 0, 0]); imguiApplyRounded(imguiCursorRingImg);
-        imguiCursorImg = cDot; imguiCursorParts = [cL, cR, cU, cD, cDot];
+        const cDot = mkSeg("cDot", 6, 6, 0, 0);
+        imguiCursorRingRT = null;
+        imguiCursorRingImg = null;
+        imguiCursorImg = cDot; imguiCursorParts = [cDot];
     }
     // ══════════════════════════════════════════════════════════════════════════
     // TEXT MENU  —  pure-text wrist panel, no physical buttons
@@ -3809,6 +3869,86 @@ Il2Cpp.perform(() => {
         }
 
         sendNotification("Centered '" + upperText + "' using " + itemsSpawned + " items!", false, 2);
+    }
+
+    function spawnBalloonNOVA() {
+        try {
+            const BALLOON_PREFAB = "InflatedBalloon";
+            const font: Record<string, string[]> = {
+                'N': ["X   X", "XX  X", "X X X", "X  XX", "X   X"],
+                'O': [" XXX ", "X   X", "X   X", "X   X", " XXX "],
+                'V': ["X   X", "X   X", "X   X", " X X ", "  X  "],
+                'A': [" XXX ", "X   X", "XXXXX", "X   X", "X   X"],
+            };
+            const word = "NOVA";
+            const scale = 0.35;
+
+            const coreM = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image;
+            const camCls = coreM.class("UnityEngine.Camera");
+            const cam = camCls.method("get_main").invoke();
+            if (!cam || cam.isNull()) { sendNotification("No camera for NOVA balloons", false); return; }
+            const camTF = cam.method("get_transform").invoke();
+            const forward = camTF.method("get_forward").invoke();
+            const right = camTF.method("get_right").invoke();
+            const up = camTF.method("get_up").invoke();
+            const pos = camTF.method("get_position").invoke();
+            const forward5 = Vector3.method("op_Multiply", 2).invoke(forward, 5);
+            let spawnBase = Vector3.method("op_Addition", 2).invoke(pos, forward5);
+
+            const totalW = (word.length * 6) * scale;
+            const centerShift = Vector3.method("op_Multiply", 2).invoke(right, -(totalW / 2));
+            spawnBase = Vector3.method("op_Addition", 2).invoke(spawnBase, centerShift);
+
+            balloonNovaObjects = [];
+            let cursorX = 0;
+            for (let i = 0; i < word.length; i++) {
+                const char = word[i];
+                const pattern = font[char];
+                if (!pattern) { cursorX += 6; continue; }
+                for (let row = 0; row < 5; row++) {
+                    for (let col = 0; col < 5; col++) {
+                        if (pattern[row][col] === 'X') {
+                            const offsetX = Vector3.method("op_Multiply", 2).invoke(right, (cursorX + col) * scale);
+                            const offsetY = Vector3.method("op_Multiply", 2).invoke(up, (4 - row) * scale);
+                            const offsetTotal = Vector3.method("op_Addition", 2).invoke(offsetX, offsetY);
+                            const finalPos = Vector3.method("op_Addition", 2).invoke(spawnBase, offsetTotal);
+                            try {
+                                const spawned = spawnNetworkPrefab(BALLOON_PREFAB, finalPos, identityQuaternion);
+                                if (spawned && !spawned.isNull()) {
+                                    try {
+                                        const rb = spawned.method("GetComponent", 1).inflate(Rigidbody).invoke();
+                                        if (rb && !rb.isNull()) { rb.method("set_isKinematic").invoke(true); }
+                                    } catch (_) { }
+                                    const fp = readVec3Components(finalPos);
+                                    balloonNovaObjects.push({ obj: spawned, baseX: fp[0], baseY: fp[1], baseZ: fp[2], phase: (i * 5 + row + col) * 0.7 });
+                                }
+                            } catch (_) { }
+                        }
+                    }
+                }
+                cursorX += 6;
+            }
+            sendNotification("NOVA balloons spawned! " + balloonNovaObjects.length + " balloons", false, 3);
+        } catch (e) { smartError("spawnBalloonNOVA:", e); }
+    }
+
+    function destroyBalloonNOVA() {
+        for (const entry of balloonNovaObjects) {
+            try {
+                if (!entry.obj || entry.obj.isNull()) continue;
+                try {
+                    const runner = entry.obj.method("get_Runner").invoke();
+                    if (runner && !runner.isNull()) {
+                        runner.method("Despawn").invoke(entry.obj);
+                        continue;
+                    }
+                } catch (_) { }
+                // fallback
+                try { Destroy(entry.obj); } catch (_) { }
+            } catch (_) { }
+        }
+        balloonNovaObjects = [];
+        sendNotification("NOVA balloons removed", false, 2);
     }
 
     function normalizeSceneObjectHandle(obj: any): string {
@@ -4121,6 +4261,14 @@ Il2Cpp.perform(() => {
         }
 
         // Apply the position and rotation (with your existing Lerp logic)
+        if (isMenuOpening || !lastMenuPos) {
+            lastMenuPos = targetPos;
+            lastMenuRot = targetRot;
+        } else {
+            targetPos = lastMenuPos;
+            targetRot = lastMenuRot;
+        }
+
         if (LerpMenu) {
             const menuPos = menuTransform.method("get_position").invoke();
             const distance = Vector3.method("Distance").invoke(menuPos, zeroVector);
@@ -4135,6 +4283,10 @@ Il2Cpp.perform(() => {
             menuTransform.method("set_position").invoke(targetPos);
             menuTransform.method("set_rotation").invoke(targetRot);
         }
+
+        const p = imguiAnimProg;
+        const eased = 1.0 - (1.0 - p) * (1.0 - p) * (1.0 - p);
+        menuTransform.method("set_localScale").invoke([0.1 * eased, 0.3 * eased, 0.3825 * eased]);
     }
     let originalTeleport: any = null;
     let isAntiTPEnabled = false;
@@ -5098,7 +5250,7 @@ Il2Cpp.perform(() => {
             new ButtonInfo({
                 buttonText: "PreviousPage",
                 method: () => {
-                    const lastPage = Math.ceil(buttons[currentCategory].length / 8) - 1;
+                    const lastPage = Math.ceil(buttons[currentCategory].length / 6) - 1;
                     currentPage--;
                     if (currentPage < 0) currentPage = lastPage;
                 },
@@ -5107,17 +5259,17 @@ Il2Cpp.perform(() => {
             new ButtonInfo({
                 buttonText: "NextPage",
                 method: () => {
-                    const lastPage = Math.ceil(buttons[currentCategory].length / 8) - 1;
+                    const lastPage = Math.ceil(buttons[currentCategory].length / 6) - 1;
                     currentPage++;
                     currentPage %= lastPage + 1;
                 },
                 isTogglable: false
             }),
             new ButtonInfo({
-                buttonText: "GlobalReturn",
-                method: () => { currentCategory = 0; currentPage = 0; },
+                buttonText: "Home",
+                method: () => { currentCategory = 0; currentPage = 0; reloadMenu(); },
                 isTogglable: false,
-                toolTip: "Returns you back to the main category."
+                toolTip: "Returns to main menu."
             }),
         ],
 
@@ -5127,6 +5279,12 @@ Il2Cpp.perform(() => {
                 method: () => { currentCategory = 0; currentPage = 0; },
                 isTogglable: false,
                 toolTip: "Returns you back to the main category."
+            }),
+            new ButtonInfo({
+                buttonText: "Toggle Player List",
+                method: () => { showPlayerList = !showPlayerList; reloadMenu(); },
+                isTogglable: false,
+                toolTip: "Toggles the 3D Player Mini-Menu."
             }),
             new ButtonInfo({
                 buttonText: "Scan SFX IDs",
@@ -5345,6 +5503,20 @@ Il2Cpp.perform(() => {
                     sendNotification("ImGui GUI OFF — back to 3D menu", false, 2);
                 },
                 toolTip: "Switches to the BB5-style flat Canvas ImGui menu (guns.lol/novarr). Toggle with this button."
+            }),
+            new ButtonInfo({
+                buttonText: "ImGui World Space",
+                isTogglable: true,
+                enableMethod: () => { imguiWorldSpace = true; },
+                disableMethod: () => { imguiWorldSpace = false; },
+                toolTip: "When enabled, ImGui menu locks in world space. When disabled, attaches to your hand."
+            }),
+            new ButtonInfo({
+                buttonText: "ImGui Pointer Line",
+                isTogglable: true,
+                enableMethod: () => { imguiShowPointerLine = true; },
+                disableMethod: () => { imguiShowPointerLine = false; },
+                toolTip: "When enabled, displays the purple line connecting your hand to the ImGui menu."
             }),
             new ButtonInfo({
                 buttonText: "Show Spawn Info",
@@ -7047,6 +7219,75 @@ Il2Cpp.perform(() => {
                 toolTip: "Spawns the currently selected prefab at your right hand instantly."
             }),
             new ButtonInfo({
+                buttonText: "VFX gunnn",
+                isTogglable: true,
+                method: () => {
+                    if (!rightGrab) return;
+                    const gunData = renderGun();
+                    const spawnPos = GunPointer(gunData)
+                        || gunData?.endPosition
+                        || gunData?.endPosition
+                        || rightHandTransform.method("get_position").invoke();
+                    if (rightTrigger && spawnPos && time > vfxGunDelay) {
+                        vfxGunDelay = time + 0.1;
+                        try {
+                            let vfxFired = false;
+                            try {
+                                let pmInst: any = null;
+                                try {
+                                    pmInst = ParticleManagerClass.field("_instance").value;
+                                } catch (_) { }
+                                try {
+                                    if (!pmInst || pmInst.isNull()) pmInst = ParticleManagerClass.method("get_instance").invoke();
+                                } catch (_) { }
+                                if (pmInst && !pmInst.isNull()) {
+                                    try { pmInst.method("PlayVFX", 3).invoke(vfxIndex, spawnPos, identityQuaternion); } catch (_) { }
+                                    try { pmInst.method("PlayLocalVFX", 3).invoke(vfxIndex, spawnPos, identityQuaternion); } catch (_) { }
+                                    try { pmInst.method("PlayLocalOnly", 3).invoke(vfxIndex, spawnPos, identityQuaternion); } catch (_) { }
+                                    try {
+                                        pmInst.method("RPC_PlayVFX", 3).invoke(vfxIndex, spawnPos, identityQuaternion);
+                                        vfxFired = true;
+                                    } catch (_) { }
+                                    if (!vfxFired) {
+                                        let _r: any = null;
+                                        try {
+                                            _r = PrefabGen.field("_instance").value.method("get_runner").invoke();
+                                        } catch (_) { }
+                                        if (_r && !_r.isNull()) try {
+                                            pmInst.method("RPC_PlayVFX", 4).invoke(_r, vfxIndex, spawnPos, identityQuaternion);
+                                            vfxFired = true;
+                                        } catch (_) { }
+                                    }
+                                }
+                            } catch (_) { }
+                            if (!vfxFired) {
+                                try {
+                                    let _vfxRunner: any = null;
+                                    try {
+                                        _vfxRunner = PrefabGen.field("_instance").value.method("get_runner").invoke();
+                                    } catch (_) { }
+                                    if (_vfxRunner && !_vfxRunner.isNull()) {
+                                        try {
+                                            ParticleManagerClass.method("RPC_PlayVFX", 4).invoke(_vfxRunner, vfxIndex, spawnPos, identityQuaternion);
+                                            vfxFired = true;
+                                        } catch (_) { }
+                                    }
+                                } catch (_) { }
+                            }
+                            if (!vfxFired) try {
+                                ParticleManagerClass.method("PlayRemoteOnly", 4).invoke(vfxIndex, spawnPos, identityQuaternion, 100.0);
+                                vfxFired = true;
+                            } catch (_) { }
+                            const _vfxLabel = vfxIDs[vfxIndex] ?? ("ID_" + vfxIndex);
+                            sendNotification("VFX: " + _vfxLabel + " [" + vfxIndex + "]" + (vfxFired ? "" : " (no instance)"), false, 2);
+                        } catch (e) {
+                            sendNotification("Play VFX Net: " + e, false);
+                        }
+                    }
+                },
+                toolTip: "Play selected VFX at the gun dot so you and everyone else can see it."
+            }),
+            new ButtonInfo({
                 buttonText: "Attach Gun (Mommy2hp)",
                 isTogglable: true,
                 method: () => {
@@ -8239,6 +8480,13 @@ Il2Cpp.perform(() => {
                     spawnTextAsItemsInFront("NOVA CLIENT");
                 },
                 toolTip: "tuff tuff sahur"
+            }),
+            new ButtonInfo({
+                buttonText: "Balloon NOVA",
+                isTogglable: true,
+                enableMethod: () => { spawnBalloonNOVA(); },
+                disableMethod: () => { destroyBalloonNOVA(); },
+                toolTip: "Spawns animated balloon letters that spell NOVA. Toggle off to delete them."
             }),
             new ButtonInfo({
                 buttonText: "Spawn Text From File",
@@ -17430,12 +17678,27 @@ Il2Cpp.perform(() => {
             }
 
             menuAnimTime += deltaTime;
+            // Animate balloon NOVA wiggle
+            if (balloonNovaObjects.length > 0) {
+                for (const entry of balloonNovaObjects) {
+                    try {
+                        if (!entry.obj || entry.obj.isNull()) continue;
+                        const tf = getTransform(entry.obj);
+                        if (!tf || tf.isNull?.()) continue;
+                        const wobY = Math.sin(menuAnimTime * 2.5 + entry.phase) * 0.06;
+                        const wobX = Math.sin(menuAnimTime * 1.8 + entry.phase + 1.0) * 0.025;
+                        tf.method("set_position").invoke([entry.baseX + wobX, entry.baseY + wobY, entry.baseZ]);
+                    } catch (_) { }
+                }
+            }
             if (themeMode === 0) {
 
                 const pulse = (Math.sin(menuAnimTime * 2.5) * 0.5 + 0.5) * 0.12;
-                bgColor = [0.02, 0.05 + pulse * 0.3, 0.25 + pulse, 0.85];
-                buttonColor = [0.10 + pulse * 0.4, 0.18 + pulse * 0.6, 0.55 + pulse, 0.85];
-                textColor = [0.80, 0.88 + pulse * 0.4, 1.0, 1.0];
+                bgColor = [1.0, 0.4 + pulse * 0.2, 0.7 + pulse * 0.2, 0.85];
+                bgColor2 = [0.0, 1.0, 1.0, 1.0];
+                buttonColor = [0.85 + pulse * 0.1, 0.20 + pulse * 0.1, 0.55 + pulse * 0.1, 0.85];
+                buttonPressedColor = [1.0, 0.10 + pulse * 0.1, 0.65 + pulse * 0.1, 1.0];
+                textColor = [1.0, 1.0, 1.0, 1.0];
             } else if (themeMode === 1) {
 
                 const h = (menuAnimTime * 0.25) % 1.0;
@@ -17444,38 +17707,35 @@ Il2Cpp.perform(() => {
                 const rb2 = Math.abs(Math.sin((h + 0.666) * Math.PI * 2));
                 const pulse = (Math.sin(menuAnimTime * 3.0) * 0.5 + 0.5) * 0.06;
                 bgColor = [rr * 0.18 + pulse * 0.03, rg * 0.18 + pulse * 0.03, rb2 * 0.18 + pulse * 0.03, 0.92];
-                buttonColor = [rr * 0.55 + pulse, rg * 0.55 + pulse, rb2 * 0.55 + pulse, 0.88];
-                buttonPressedColor = [rr, rg, rb2, 1.0];
+                buttonColor = [0.85 + pulse * 0.1, 0.20, 0.55 + pulse * 0.1, 0.85];
+                buttonPressedColor = [1.0, 0.10, 0.65, 1.0];
                 textColor = [0.95, 0.95, 0.95, 1.0];
             } else if (themeMode === 2) {
 
                 const pulse2 = (Math.sin(menuAnimTime * 3.0) * 0.5 + 0.5) * 0.2;
                 bgColor = [0.0, 0.05 + pulse2 * 0.2, 0.0, 0.85];
-                buttonColor = [0.0, 0.25 + pulse2, 0.0, 0.85];
+                buttonColor = [0.85 + pulse2 * 0.05, 0.20, 0.55, 0.85];
+                buttonPressedColor = [1.0, 0.10, 0.65, 1.0];
                 textColor = [0.2, 1.0, 0.2, 1.0];
             } else if (themeMode === 3) {
 
                 const pulse3 = (Math.sin(menuAnimTime * 2.0) * 0.5 + 0.5) * 0.15;
                 bgColor = [0.15 + pulse3, 0.0, 0.0, 0.85];
-                buttonColor = [0.4 + pulse3, 0.0, 0.0, 0.85];
+                buttonColor = [0.85 + pulse3 * 0.1, 0.20, 0.55, 0.85];
+                buttonPressedColor = [1.0, 0.10, 0.65, 1.0];
                 textColor = [1.0, 0.3, 0.3, 1.0];
             } else if (themeMode === 4) {
 
                 const pulse4 = (Math.sin(menuAnimTime * 2.0) * 0.5 + 0.5) * 0.1;
                 bgColor = [0.15 + pulse4, 0.10 + pulse4, 0.0, 0.85];
-                buttonColor = [0.5 + pulse4, 0.35 + pulse4, 0.0, 0.85];
+                buttonColor = [0.85 + pulse4 * 0.1, 0.20, 0.55, 0.85];
+                buttonPressedColor = [1.0, 0.10, 0.65, 1.0];
                 textColor = [1.0, 0.85, 0.2, 1.0];
             } else if (themeMode === 5) {
-                // Pink Theme: Neon/Cyberpunk inspired pinks and magentas
                 const pulse5 = (Math.sin(menuAnimTime * 2.0) * 0.5 + 0.5) * 0.05;
-
-                // Deep, dark magenta-tinted background
                 bgColor = [0.18 + pulse5, 0.05 + pulse5, 0.12, 0.90];
-
-                // Vibrant hot pink buttons
                 buttonColor = [0.85 + pulse5, 0.20, 0.55 + pulse5, 0.85];
-
-                // Clean, high-contrast soft pink/white text
+                buttonPressedColor = [1.0, 0.10, 0.65, 1.0];
                 textColor = [1.0, 0.85, 0.95, 1.0];
             }
 
@@ -17665,19 +17925,35 @@ Il2Cpp.perform(() => {
                 prevMenuKeyBtn = currentMenuKeyBtn;
 
                 const shouldShowMenu = imguiMode ? imguiMenuToggled : currentMenuKeyBtn;
+                isMenuOpening = shouldShowMenu;
 
-                if (shouldShowMenu) {
-                    if (currentNotification != "" && time > notifactionResetTime) reloadMenu();
-                    if (menu == null) {
-                        if (imguiMode) renderMenuImGui();
-                        else renderMenu();
+                const spd = 1.0 / 0.18;
+                if (shouldShowMenu) imguiAnimProg = Math.min(1.0, imguiAnimProg + deltaTime * spd);
+                else imguiAnimProg = Math.max(0.0, imguiAnimProg - deltaTime * spd);
+
+                if (imguiMode) {
+                    const visible = imguiAnimProg > 0.001;
+                    if (visible) {
+                        if (currentNotification != "" && time > notifactionResetTime) reloadMenu();
+                        if (menu == null) renderMenuImGui();
+                        else {
+                            imguiUpdateAnimations();
+                            imguiUpdateCursor();
+                            imguiRecenterMenu();
+                        }
                     } else {
-                        if (imguiMode) { imguiUpdateAnimations(); imguiUpdateCursor(); }
-                        else recenterMenu();
+                        if (menu != null) { Destroy(menu); menu = null; imguiFixedPos = null; imguiFixedRot = null; }
+                        cleanupImguiPointerLine();
                     }
                 } else {
-                    if (menu != null) { Destroy(menu); menu = null; }
-                    if (imguiMode) cleanupImguiPointerLine();
+                    const visible = imguiAnimProg > 0.001;
+                    if (visible) {
+                        if (currentNotification != "" && time > notifactionResetTime) reloadMenu();
+                        if (menu == null) renderMenu();
+                        else recenterMenu();
+                    } else {
+                        if (menu != null) { Destroy(menu); menu = null; }
+                    }
                 }
             }
 
@@ -17687,7 +17963,7 @@ Il2Cpp.perform(() => {
             textMenuPrevGrip = rightGrab;
             textMenuPrevTrigger = rightTrigger;
 
-            if (menu == null) {
+            if (menu == null || imguiMode) {
                 if (reference != null) { Destroy(reference); reference = null; }
             } else {
                 if (reference == null) renderReference();
@@ -18902,3 +19178,4 @@ Il2Cpp.perform(() => {
     console.log(`i sniff bums`);
     console.log(`dev mode enabled`);
 }, "main");
+
