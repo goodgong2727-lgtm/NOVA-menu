@@ -1,5 +1,8 @@
+declare const Il2Cpp: any;
 
-il2cpp_init: () => Il2Cpp.module.findExportByName("hoPHzslssBJ"),
+
+Il2Cpp.$config.exports = {
+	il2cpp_init: () => Il2Cpp.module.findExportByName("hoPHzslssBJ"),
 	il2cpp_init_utf16: () => Il2Cpp.module.findExportByName("fUHWTCWjJjR"),
 	il2cpp_shutdown: () => Il2Cpp.module.findExportByName("yrUtHrBwOni"),
 	il2cpp_set_config_dir: () => Il2Cpp.module.findExportByName("zZFfXxgbuGu"),
@@ -233,4 +236,4 @@ il2cpp_init: () => Il2Cpp.module.findExportByName("hoPHzslssBJ"),
 	il2cpp_class_get_userdata_offset: () => Il2Cpp.module.findExportByName("PQeICfzjFQS"),
 	il2cpp_set_default_thread_affinity: () => Il2Cpp.module.findExportByName("jmWfyjYBdoB"),
 	il2cpp_unity_set_android_network_up_state_func: () => Il2Cpp.module.findExportByName("GJhfWgdcUTq"),
-	}
+};
