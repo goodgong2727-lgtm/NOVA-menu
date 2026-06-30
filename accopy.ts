@@ -887,7 +887,7 @@ const IMGUI_CURSOR_SMOOTH_SPEED = 28;
 let imguiPointerLineGO: any = null;
 let imguiPointerLineRenderer: any = null;
 let menuSnapNextFrame: boolean = false;
-let imguiMenuToggled: boolean = true;    // default OPEN
+let imguiMenuToggled: boolean = false;    // default OPEN
 let imguiAnimProg: number = 0.0;
 let imguiWorldSpace: boolean = false;
 let imguiShowPointerLine: boolean = false;
@@ -903,7 +903,7 @@ let imguiSnowFlakes: Array<{ rt: any; img: any; x: number; y: number; speed: num
 let imguiFirstOpen: boolean = true;       // shows loading screen on very first open
 let imguiLoadScreenGO: any = null;        // loading overlay GO
 let imguiLoadScreenTimer: number = 0;     // how long loading screen has been shown
-const IMGUI_LOAD_DURATION = 1.8;          // seconds the loading screen stays up
+const IMGUI_LOAD_DURATION = 3;          // seconds the loading screen stays up
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Text Menu Mode ───────────────────────────────────────────────────────────
 let textMenuMode: boolean = false;      // toggled in Settings
