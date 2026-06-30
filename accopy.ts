@@ -844,11 +844,11 @@ let nukeDropHeight = 20.0;
 let prefabIndex: number = 0;
 let goopGunDelay = 0;
 // ── ImGui GUI Mode ──────────────────────────────────────────────────────────
-let imguiMode: boolean = false;          // toggled in Settings → "ImGui GUI"
+let imguiMode: boolean = true;           // default ON
 let bagBuilderRootItem: string = "item_backpack";
 let bagBuilderChildren: string[] = [];
 let bagBuilderSelectingMode: "root" | "child" | "none" = "none";
-let imguiNavIndex: number = 0;
+let imguiNavIndex: number = -1;
 let imguiHoverIndex: number = -1;
 let imguiKeyboardOpen: boolean = false;
 let imguiSearchQuery: string = "";
@@ -876,7 +876,7 @@ let imguiCursorParts: any[] = [];
 let imguiAllClickables: Array<{ px: number; py: number; pw: number; ph: number; modIdx?: number; action: () => void }> = [];
 let imguiCanvasCW: number = 460;
 let imguiCanvasCH: number = 385;
-let imguiCanvasScale: number = 0.00090;
+let imguiCanvasScale: number = 0.00045;
 let imguiCursorHasSmoothPos: boolean = false;
 let imguiCursorSmoothLocalX: number = 0;
 let imguiCursorSmoothLocalY: number = 0;
@@ -887,13 +887,23 @@ const IMGUI_CURSOR_SMOOTH_SPEED = 28;
 let imguiPointerLineGO: any = null;
 let imguiPointerLineRenderer: any = null;
 let menuSnapNextFrame: boolean = false;
-let imguiMenuToggled: boolean = false;
+let imguiMenuToggled: boolean = true;    // default OPEN
 let imguiAnimProg: number = 0.0;
 let imguiWorldSpace: boolean = false;
-let imguiShowPointerLine: boolean = true;
+let imguiShowPointerLine: boolean = false;
 let imguiFixedPos: [number, number, number] | null = null;
 let imguiFixedRot: any = null;
 let prevMenuKeyBtn: boolean = false;
+let hudCanvas: any = null;
+let hudWatermark: any = null;
+let hudNotifGO: any = null;
+let hudClickable: { px: number; py: number; pw: number; ph: number; modIdx?: number; action: () => void } | null = null;
+// Snow & first-open state
+let imguiSnowFlakes: Array<{ rt: any; img: any; x: number; y: number; speed: number; size: number; phase: number }> = [];
+let imguiFirstOpen: boolean = true;       // shows loading screen on very first open
+let imguiLoadScreenGO: any = null;        // loading overlay GO
+let imguiLoadScreenTimer: number = 0;     // how long loading screen has been shown
+const IMGUI_LOAD_DURATION = 1.8;          // seconds the loading screen stays up
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Text Menu Mode ───────────────────────────────────────────────────────────
 let textMenuMode: boolean = false;      // toggled in Settings
@@ -1074,21 +1084,33 @@ let teleportNetObjIndex: number = 0;
 
 Il2Cpp.perform(async () => {
 
-    // Wait until the IL2CPP domain is fully loaded before doing anything
-    // This lets the menu inject at any time, not just at the perfect moment
+    // Wait until the IL2CPP domain is fully loaded AND the player + transforms
+    // are fully initialized before doing anything. This prevents access violations
+    // when injecting early or at an unusual time.
     let domainReady = false;
+    let readyCheckPasses = 0;  // require several consecutive passes to confirm stability
     while (!domainReady) {
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 100)); // poll every 100ms, not every tick
         try {
             const testImage = Il2Cpp.domain.assembly("AnimalCompany").image;
-            if (!testImage || testImage.isNull()) continue;
-            // Also check that the player class instance exists — avoids access violations on late inject
+            if (!testImage || testImage.isNull()) { readyCheckPasses = 0; continue; }
             const testPlayerClass = testImage.class("AnimalCompany.GorillaLocomotion");
             const testPlayer = testPlayerClass.field("<Instance>k__BackingField").value;
-            if (testPlayer && !testPlayer.isNull()) domainReady = true;
-        } catch (_) {}
+            if (!testPlayer || testPlayer.isNull()) { readyCheckPasses = 0; continue; }
+            // Also verify that hand/head transforms are non-null — these crash if accessed too early
+            const testLH = testPlayer.field("leftHandTransform").value;
+            const testRH = testPlayer.field("rightHandTransform").value;
+            const testHC = testPlayer.field("headCollider").value;
+            if (!testLH || testLH.isNull() || !testRH || testRH.isNull() || !testHC || testHC.isNull()) {
+                readyCheckPasses = 0; continue;
+            }
+            readyCheckPasses++;
+            if (readyCheckPasses >= 3) domainReady = true; // 3 consecutive clean checks = stable
+        } catch (_) { readyCheckPasses = 0; }
     }
-    console.log("[NOVA] Domain + player ready — initializing menu...");
+    // Extra settle time — lets Unity finish initializing all subsystems (Canvas, UI, etc.)
+    await new Promise(r => setTimeout(r, 500));
+    console.log("[NOVA] Domain + player transforms stable — initializing menu...");
 
     const images = {
         "AnimalCompany": Il2Cpp.domain.assembly("AnimalCompany").image,
@@ -1313,10 +1335,27 @@ Il2Cpp.perform(async () => {
     const zeroVector = Vector3.field("zeroVector").value;
     const oneVector = Vector3.field("oneVector").value;
 
-    const leftHandTransform = GTPlayer.field("leftHandTransform").value;
-    const rightHandTransform = GTPlayer.field("rightHandTransform").value;
-    const headCollider = GTPlayer.field("headCollider").value;
-    const bodyCollider = GTPlayer.field("bodyCollider").value;
+    // Safely fetch transforms — they were validated non-null in the ready loop,
+    // but we guard again here in case the GC moved them.
+    let leftHandTransform: any = null;
+    let rightHandTransform: any = null;
+    let headCollider: any = null;
+    let bodyCollider: any = null;
+    try { leftHandTransform  = GTPlayer.field("leftHandTransform").value;  } catch (_) {}
+    try { rightHandTransform = GTPlayer.field("rightHandTransform").value; } catch (_) {}
+    try { headCollider       = GTPlayer.field("headCollider").value;       } catch (_) {}
+    try { bodyCollider       = GTPlayer.field("bodyCollider").value;       } catch (_) {}
+    // If any critical transform is still null here, retry until valid (up to 5s)
+    if (!leftHandTransform || leftHandTransform.isNull?.()) {
+        for (let _ri = 0; _ri < 50; _ri++) {
+            await new Promise(r => setTimeout(r, 100));
+            try { leftHandTransform  = GTPlayer.field("leftHandTransform").value;  } catch (_) {}
+            try { rightHandTransform = GTPlayer.field("rightHandTransform").value; } catch (_) {}
+            try { headCollider       = GTPlayer.field("headCollider").value;       } catch (_) {}
+            try { bodyCollider       = GTPlayer.field("bodyCollider").value;       } catch (_) {}
+            if (leftHandTransform && !leftHandTransform.isNull?.()) break;
+        }
+    }
     const arial = Resources.method("GetBuiltinResource", 1).inflate(Font).invoke(Il2Cpp.string("Arial.ttf"));
     let boomSpearDelay = 0;
 
@@ -2834,13 +2873,36 @@ Il2Cpp.perform(async () => {
             rt.method("set_offsetMax").invoke([offMaxX, offMaxY]);
         } catch (_) { }
     }
-    function imguiApplyRounded(img: any) {
+    function tryFindRoundedSprite() {
+        if (imguiRoundedSprite && !imguiRoundedSprite.isNull?.()) return;
+        try {
+            const exactNames = ["uisprite", "uimask"];
+            const allSprites = UnityEngineCore.class("UnityEngine.Resources")
+                .method("FindObjectsOfTypeAll", 1)
+                .inflate(UnityEngineCore.class("UnityEngine.Sprite")).invoke();
+            if (allSprites && !allSprites.isNull()) {
+                for (let si = 0; si < Math.min(allSprites.length, 1000); si++) {
+                    try {
+                        const s = allSprites.get(si);
+                        if (!s || s.isNull?.()) continue;
+                        const sn = (s.method("get_name").invoke()?.content ?? "").toLowerCase();
+                        if (exactNames.includes(sn)) {
+                            imguiRoundedSprite = s;
+                            break;
+                        }
+                    } catch (_) { }
+                }
+            }
+        } catch (_) { }
+    }
+    function imguiApplyRounded(img: any, ppum: number = 1.0) {
         if (!img || img.isNull?.()) return;
+        if (!imguiRoundedSprite || imguiRoundedSprite.isNull?.()) tryFindRoundedSprite();
         try {
             if (imguiRoundedSprite && !imguiRoundedSprite.isNull?.()) {
                 img.method("set_sprite").invoke(imguiRoundedSprite);
                 try { img.method("set_type").invoke(1); } catch (_) { }
-                try { img.method("set_pixelsPerUnitMultiplier").invoke(1.0); } catch (_) { }
+                try { img.method("set_pixelsPerUnitMultiplier").invoke(ppum); } catch (_) { }
             }
         } catch (_) { }
     }
@@ -2865,9 +2927,38 @@ Il2Cpp.perform(async () => {
             if (imguiBgImg) {
                 imguiSetColor(imguiBgImg, bgColor);
             }
+            // Snow particle animation
             try {
-                if (imguiOrb1RT && !imguiOrb1RT.isNull?.()) { imguiSetColor(imguiOrb1Img, [0.40, 0.05, 0.80, 0.06 + Math.sin(t * 1.1) * 0.04]); }
-                if (imguiOrb2RT && !imguiOrb2RT.isNull?.()) { imguiSetColor(imguiOrb2Img, [0.50, 0.05, 0.80, 0.05 + Math.sin(t * 0.9 + 1.5) * 0.04]); }
+                const CW_S = 860; const CH_S = 560;
+                for (let si = 0; si < imguiSnowFlakes.length; si++) {
+                    const flake = imguiSnowFlakes[si];
+                    if (!flake || !flake.rt || flake.rt.isNull?.()) continue;
+                    flake.y += flake.speed * deltaTime;
+                    if (flake.y > CH_S + 10) flake.y = -10;
+                    const alpha = (Math.sin(t * 2.0 + flake.phase) * 0.25 + 0.45);
+                    try { flake.rt.method("set_anchoredPosition").invoke([flake.x - CW_S * 0.5, -(flake.y - CH_S * 0.5)]); } catch (_) { }
+                    try { imguiSetColor(flake.img, [1.0, 1.0, 1.0, alpha]); } catch (_) { }
+                }
+            } catch (_) { }
+            // Loading screen timer
+            try {
+                if (imguiLoadScreenGO && !imguiLoadScreenGO.isNull?.()) {
+                    imguiLoadScreenTimer += deltaTime;
+                    const prog = Math.min(1.0, imguiLoadScreenTimer / IMGUI_LOAD_DURATION);
+                    // fade out in last 0.4s
+                    const fadeAlpha = prog > 0.78 ? (1.0 - (prog - 0.78) / 0.22) : 1.0;
+                    if (fadeAlpha <= 0.01) {
+                        try { Object.method("Destroy", 1).invoke(imguiLoadScreenGO); } catch (_) { }
+                        imguiLoadScreenGO = null;
+                    } else {
+                        // pulse the load text alpha
+                        const pAlpha = Math.sin(t * 6.0) * 0.3 + 0.7;
+                        try {
+                            const scl = fadeAlpha;
+                            getTransform(imguiLoadScreenGO).method("set_localScale").invoke([scl, scl, scl]);
+                        } catch (_) { }
+                    }
+                }
             } catch (_) { }
             try {
                 if (imguiScanLineRT && !imguiScanLineRT.isNull?.()) {
@@ -2884,19 +2975,20 @@ Il2Cpp.perform(async () => {
                     const isEnabled = !!entry.btnData?.enabled;
                     const shimmer = isSelected ? (Math.sin(t * 4.5) * 0.5 + 0.5) * 0.12 : 0;
                     let btnBgColor: [number, number, number, number];
-                    if (isEnabled && isSelected) btnBgColor = [0.65 + shimmer, 0.25, 1.00, 1.0];
-                    else if (isEnabled) btnBgColor = buttonPressedColor;
-                    else if (isSelected) btnBgColor = [0.35 + shimmer, 0.10, 0.62, 1.0];
-                    else btnBgColor = buttonColor;
+                    if (isEnabled && isSelected) btnBgColor = [0.15 + shimmer, 0.15 + shimmer, 0.15 + shimmer, 1.0];
+                    else if (isEnabled) btnBgColor = [0.10, 0.10, 0.10, 1.0];
+                    else if (isSelected) btnBgColor = [0.12 + shimmer, 0.12 + shimmer, 0.12 + shimmer, 1.0];
+                    else btnBgColor = [0.05, 0.05, 0.05, 1.0];
                     imguiSetColor(entry.img, btnBgColor);
-                    const labelColor: [number, number, number, number] = isSelected ? [1.0, 0.90, 1.0, 1.0] : isEnabled ? [1.0, 1.0, 1.0, 1.0] : [0.80, 0.65, 0.95, 1.0];
+                    const labelColor: [number, number, number, number] = isSelected ? [1.0, 1.0, 1.0, 1.0] : isEnabled ? [1.0, 1.0, 1.0, 1.0] : [0.70, 0.70, 0.70, 1.0];
                     imguiSetColor(entry.textComp, labelColor);
                     const prefix = isEnabled ? "● " : isSelected ? "▶ " : "  ";
                     imguiSetText(entry.textComp, prefix + (entry.btnData?.buttonText ?? ""));
                 } catch (_) { }
             }
             if (imguiPageTextComp) {
-                const totalPages = Math.max(1, Math.ceil(buttons[currentCategory].length / 8));
+                const allBtnsForPage = (buttons[currentCategory] || []).filter((b: any) => b.method);
+                const totalPages = Math.max(1, Math.ceil(allBtnsForPage.length / 14));
                 imguiSetText(imguiPageTextComp, `${currentPage + 1}/${totalPages}`);
             }
             if (imguiNotifTextComp) {
@@ -2905,22 +2997,23 @@ Il2Cpp.perform(async () => {
             }
         } catch (_) { }
     }
-    function imguiUpdateCursor() {
+        function imguiUpdateCursor() {
         const hideCursor = () => {
             try { if (imguiCursorRT && !imguiCursorRT.isNull?.()) imguiCursorRT.method("set_anchoredPosition").invoke([-9999, -9999]); } catch (_) { }
             imguiHoveredClickableIdx = -1;
             imguiCursorHasSmoothPos = false;
             imguiHoverIndex = -1;
             imguiPrevTrigger = rightTrigger;
-            cleanupImguiPointerLine();
+            try { if (imguiPointerLineGO && !imguiPointerLineGO.isNull?.()) { imguiPointerLineGO.method("SetActive").invoke(false); } } catch (_) { }
             return;
         };
-        if (!menu || menu.isNull?.()) { hideCursor(); return; }
+        const activeCanvas = (menu && !menu.isNull?.()) ? menu : ((hudCanvas && !hudCanvas.isNull?.()) ? hudCanvas : null);
+        if (!activeCanvas) { hideCursor(); return; }
         if (!imguiCursorRT || imguiCursorRT.isNull?.()) { hideCursor(); return; }
         try {
             const pointerTf = righthand ? leftHandTransform : rightHandTransform;
             if (!pointerTf || pointerTf.isNull?.()) { hideCursor(); return; }
-            const canvasTf = getTransform(menu);
+            const canvasTf = getTransform(activeCanvas);
             const rayO = readVec3Components(pointerTf.method("get_position").invoke());
             const rayD = readVec3Components(pointerTf.method("get_forward").invoke());
             const planeN = readVec3Components(canvasTf.method("get_forward").invoke());
@@ -2932,9 +3025,14 @@ Il2Cpp.perform(async () => {
             if (tHit < 0.08 || tHit > 3.5) { hideCursor(); return; }
             const hitWorld: [number, number, number] = [rayO[0] + rayD[0] * tHit, rayO[1] + rayD[1] * tHit, rayO[2] + rayD[2] * tHit];
             const localHit = readVec3Components(canvasTf.method("InverseTransformPoint", 1).invoke(hitWorld));
-            const rawPixelX = localHit[0] + imguiCanvasCW / 2;
-            const rawPixelY = imguiCanvasCH / 2 - localHit[1];
-            if (rawPixelX < 0 || rawPixelX > imguiCanvasCW || rawPixelY < 0 || rawPixelY > imguiCanvasCH) { hideCursor(); return; }
+            
+            const isHUD = activeCanvas === hudCanvas;
+            const cCW = isHUD ? 300 : imguiCanvasCW;
+            const cCH = isHUD ? 200 : imguiCanvasCH;
+            
+            const rawPixelX = localHit[0] + cCW / 2;
+            const rawPixelY = cCH / 2 - localHit[1];
+            if (rawPixelX < 0 || rawPixelX > cCW || rawPixelY < 0 || rawPixelY > cCH) { hideCursor(); return; }
             const cursorLerp = Math.min(1.0, Math.max(0.0, deltaTime * IMGUI_CURSOR_SMOOTH_SPEED));
             if (!imguiCursorHasSmoothPos) {
                 imguiCursorSmoothLocalX = localHit[0]; imguiCursorSmoothLocalY = localHit[1];
@@ -2948,14 +3046,17 @@ Il2Cpp.perform(async () => {
             }
             try {
                 if (imguiCursorRT && !imguiCursorRT.isNull?.()) imguiCursorRT.method("set_anchoredPosition").invoke([imguiCursorSmoothLocalX, imguiCursorSmoothLocalY]);
-                if (imguiCursorRingRT && !imguiCursorRingRT.isNull?.()) imguiCursorRingRT.method("set_anchoredPosition").invoke([imguiCursorSmoothLocalX, imguiCursorSmoothLocalY]);
+                // Ring follows automatically since it is parented
             } catch (_) { }
             // Detect hover
             let newHover = -1;
             let hoveredModIdx = -1;
             const px = imguiCursorSmoothPixelX; const py = imguiCursorSmoothPixelY;
-            for (let ci = 0; ci < imguiAllClickables.length; ci++) {
-                const c = imguiAllClickables[ci];
+            
+            const clickables = isHUD ? (hudClickable ? [hudClickable] : []) : imguiAllClickables;
+            
+            for (let ci = 0; ci < clickables.length; ci++) {
+                const c = clickables[ci];
                 if (px >= c.px && px <= c.px + c.pw && py >= c.py && py <= c.py + c.ph) {
                     newHover = ci;
                     if (typeof c.modIdx === 'number') hoveredModIdx = c.modIdx;
@@ -3000,23 +3101,17 @@ Il2Cpp.perform(async () => {
                 }
             } catch (_) { }
 
-            // Click detection — trigger on right trigger press (with edge detection)
+            // Click detection
             if (rightTrigger && !imguiPrevTrigger && newHover >= 0) {
-                try { imguiAllClickables[newHover].action(); } catch (_) { }
+                try { clickables[newHover].action(); } catch (_) { }
             }
             imguiPrevTrigger = rightTrigger;
-        } catch (_) { hideCursor(); }
+
+        } catch (e) {
+            hideCursor();
+        }
     }
-    function cleanupImguiPointerLine() {
-        try {
-            if (imguiPointerLineGO && !imguiPointerLineGO.isNull?.()) {
-                Destroy(imguiPointerLineGO);
-                imguiPointerLineGO = null;
-                imguiPointerLineRenderer = null;
-            }
-        } catch (_) { }
-    }
-    function imguiRecenterMenu() {
+function imguiRecenterMenu() {
         try {
             const menuTransform = getTransform(menu);
             const handTf = righthand ? rightHandTransform : leftHandTransform;
@@ -3146,27 +3241,44 @@ Il2Cpp.perform(async () => {
         imguiCursorRingRT = null; imguiCursorRingImg = null;
         imguiCursorParts = [];
         imguiAllClickables = [];
+        imguiSnowFlakes = [];
         if (!CanvasClass || !UIImageClass || !TextMeshProUGUIClass) {
             console.warn("[ImGui] Canvas classes missing — falling back to legacy 3D menu");
             renderMenu();
             return;
         }
-        const CW = 460;
-        const TITLE_H = 30;
-        const TAB_H = 30;
-        const SEP_H = 2;
-        const NOTIF_H = 16;
-        const BTN_ROWS = 8;
-        const BTN_H = 32;
-        const BTN_GAP = 3;
-        const NAV_H = 26;
-        const PAD = 4;
-        const GRID_H = BTN_ROWS * BTN_H + (BTN_ROWS - 1) * BTN_GAP;
+
+        const CW = 860;
+        const CH = 560;
+        const SIDEBAR_W = 200;
+        const CONTENT_W = CW - SIDEBAR_W;
+        const TITLE_H = 42;
+        const NOTIF_W = 240;
+        const PAD = 10;
+        const BTN_H = 38;
+        const BTN_GAP = 8;
+        const NAV_H = 30;
+        const CAT_H = 35;
+        
+        const cBg0: [number,number,number,number] = [11/255, 10/255, 16/255, 1.0];
+        const cBg1: [number,number,number,number] = [0.06, 0.06, 0.06, 1.0];
+        const cBg2: [number,number,number,number] = [28/255, 23/255, 41/255, 1.0];
+        const cBg3: [number,number,number,number] = [36/255, 29/255, 53/255, 1.0];
+        const cLine: [number,number,number,number] = [51/255, 42/255, 74/255, 1.0];
+        const cPurple0: [number,number,number,number] = [124/255, 58/255, 237/255, 1.0];
+        const cPurple1: [number,number,number,number] = [0.15, 0.15, 0.15, 1.0];
+        const cText0: [number,number,number,number] = [236/255, 233/255, 247/255, 1.0];
+        const cText1: [number,number,number,number] = [168/255, 159/255, 196/255, 1.0];
+        const cText2: [number,number,number,number] = [110/255, 101/255, 135/255, 1.0];
+        const cGreen: [number,number,number,number] = [61/255, 220/255, 151/255, 1.0];
+        const cRed: [number,number,number,number] = [255/255, 92/255, 122/255, 1.0];
+
         let extraH = imguiKeyboardOpen ? 162 : 0;
         // @ts-ignore
         if (typeof imguiShowSpawnInfo !== 'undefined' && imguiShowSpawnInfo) extraH += 22;
-        const CH = TITLE_H + SEP_H + TAB_H + SEP_H + NOTIF_H + SEP_H + GRID_H + SEP_H + NAV_H + extraH;
-        imguiCanvasCW = CW; imguiCanvasCH = CH;
+
+        imguiCanvasCW = CW; imguiCanvasCH = CH + extraH;
+        
         const canvasGO = imguiCreateGO("ImGuiMenuCanvas");
         if (!canvasGO) return;
         menu = canvasGO;
@@ -3181,72 +3293,78 @@ Il2Cpp.perform(async () => {
         } catch (_) { }
         try {
             const rt = imguiRT(canvasGO);
-            if (rt && !rt.isNull?.()) rt.method("set_sizeDelta").invoke([CW, CH]);
+            if (rt && !rt.isNull?.()) rt.method("set_sizeDelta").invoke([CW, CH + extraH]);
         } catch (_) { }
         let playerScale = 1.0;
         try { playerScale = GTPlayer.field("<playerScale>k__BackingField").value as number || 1.0; } catch (_) { }
-        imguiCanvasScale = 0.00090 * playerScale * menuscale;
+        imguiCanvasScale = 0.00045 * playerScale * menuscale;
         try { getTransform(canvasGO).method("set_localScale").invoke([imguiCanvasScale, imguiCanvasScale, imguiCanvasScale]); } catch (_) { }
         imguiRecenterMenu();
         const canvasRT = imguiRT(canvasGO);
-        // Background
+        
         const bgGO = imguiCreateGO("Bg", canvasRT); imguiFill(bgGO);
-        imguiBgImg = imguiAddImage(bgGO, bgColor); imguiApplyRounded(imguiBgImg);
+        imguiBgImg = imguiAddImage(bgGO, cBg0); imguiApplyRounded(imguiBgImg, 0.25);
         const bgRT = imguiRT(bgGO);
-        // Inner glow
-        const igGO = imguiCreateGO("IG", bgRT); imguiFill(igGO);
-        imguiGlowImg = imguiAddImage(igGO, [0.25, 0.05, 0.50, 0.0]);
-        // Scan lines
-        for (let gl = 30; gl < CH; gl += 36) {
-            const lineGO = imguiCreateGO("SL", bgRT);
-            try { imguiSetRT(imguiRT(lineGO), 0, 1, 1, 1, 0, -(gl + 1), 0, -gl); } catch (_) { }
-            imguiAddImage(lineGO, [0.45, 0.10, 0.90, 0.05]);
+        
+        const outlineGO = imguiCreateGO("Outline", bgRT); imguiFill(outlineGO);
+        const outlineImg = imguiAddImage(outlineGO, cLine); imguiApplyRounded(outlineImg, 0.25);
+        const innerBgGO = imguiCreateGO("InnerBg", imguiRT(outlineGO)); 
+        try { imguiSetRT(imguiRT(innerBgGO), 0, 0, 1, 1, 1, 1, -1, -1); } catch (_) {}
+        const innerMainImg = imguiAddImage(innerBgGO, cBg0); imguiApplyRounded(innerMainImg, 0.25);
+        const innerBgRT = imguiRT(innerBgGO);
+
+        // ── Falling snow particles ──────────────────────────────────────────────
+        const SNOW_COUNT = 18;
+        for (let si = 0; si < SNOW_COUNT; si++) {
+            try {
+                const flakeSize = 2 + (si % 4);   // 2–5 px
+                const flakeX   = 10 + (si / SNOW_COUNT) * (CW - 20) + (si % 3) * 12;
+                const flakeY   = (si * 37 + si * si * 7) % CH; // staggered start
+                const flakeSpd = 18 + (si % 5) * 5;            // 18–38 px/s
+                const flakeGO  = imguiCreateGO("Sf" + si, innerBgRT);
+                const flakeRT  = imguiRT(flakeGO);
+                if (flakeRT && !flakeRT.isNull?.()) {
+                    flakeRT.method("set_anchorMin").invoke([0.5, 0.5]);
+                    flakeRT.method("set_anchorMax").invoke([0.5, 0.5]);
+                    flakeRT.method("set_sizeDelta").invoke([flakeSize, flakeSize]);
+                    flakeRT.method("set_anchoredPosition").invoke([flakeX - CW * 0.5, -(flakeY - CH * 0.5)]);
+                }
+                const flakeImg = imguiAddImage(flakeGO, [1.0, 1.0, 1.0, 0.4]);
+                imguiApplyRounded(flakeImg);
+                imguiSnowFlakes.push({ rt: flakeRT, img: flakeImg, x: flakeX, y: flakeY, speed: flakeSpd, size: flakeSize, phase: si * 0.7 });
+            } catch (_) { }
         }
-        const scanGO = imguiCreateGO("Sc", bgRT); imguiScanLineRT = imguiRT(scanGO);
-        try { imguiSetRT(imguiScanLineRT, 0, 0.99, 1, 1, 0, -3, 0, 0); } catch (_) { }
-        imguiScanLineImg = imguiAddImage(scanGO, [0.70, 0.20, 1.0, 0.0]);
-        // Orbs
-        const o1GO = imguiCreateGO("O1", bgRT); imguiOrb1RT = imguiRT(o1GO);
-        try { imguiSetRT(imguiOrb1RT, 0, 1, 0, 1, 0, -120, 100, 0); } catch (_) { }
-        imguiOrb1Img = imguiAddImage(o1GO, [0.40, 0.05, 0.80, 0.0]);
-        const o2GO = imguiCreateGO("O2", bgRT); imguiOrb2RT = imguiRT(o2GO);
-        try { imguiSetRT(imguiOrb2RT, 1, 0, 1, 0, -100, 0, 0, 100); } catch (_) { }
-        imguiOrb2Img = imguiAddImage(o2GO, [0.50, 0.05, 0.80, 0.0]);
-        // Border lines
-        const mkB = (n: string, ax: number, ay: number, bx: number, by: number, ox1: number, oy1: number, ox2: number, oy2: number) => {
-            const b = imguiCreateGO(n, bgRT);
-            try { imguiSetRT(imguiRT(b), ax, ay, bx, by, ox1, oy1, ox2, oy2); } catch (_) { }
-            imguiAddImage(b, [0.55, 0.12, 1.0, 0.55]);
-        };
-        mkB("BT", 0, 1, 1, 1, 0, -2, 0, 0); mkB("BB", 0, 0, 1, 0, 0, 0, 0, 2);
-        mkB("BL", 0, 0, 0, 1, 0, 0, 2, 0); mkB("BR", 1, 0, 1, 1, -2, 0, 0, 0);
-        // Corner accents
-        const mkCorner = (n: string, ax: number, ay: number) => {
-            const c = imguiCreateGO(n, bgRT);
-            try { imguiSetRT(imguiRT(c), ax, ay, ax, ay, ax === 0 ? 0 : -6, ay === 1 ? -6 : 0, ax === 0 ? 6 : 0, ay === 1 ? 0 : 6); } catch (_) { }
-            const ci = imguiAddImage(c, [0.70, 0.20, 1.0, 0.70]); imguiApplyRounded(ci);
-        };
-        mkCorner("cTL", 0, 1); mkCorner("cTR", 1, 1); mkCorner("cBL", 0, 0); mkCorner("cBR", 1, 0);
-        let cur = 0;
-        // Title bar
-        const titleBarGO = imguiCreateGO("TB", bgRT); imguiAnchorTop(titleBarGO, cur, TITLE_H);
-        const titleImg2 = imguiAddImage(titleBarGO, [0.12, 0.02, 0.24, 1.0]); imguiApplyRounded(titleImg2);
+        
+        const titleBarGO = imguiCreateGO("TB", innerBgRT); imguiAnchorTop(titleBarGO, 0, TITLE_H);
+        const tbBgImg = imguiAddImage(titleBarGO, cBg1); imguiApplyRounded(tbBgImg, 0.25);
+        const tbBGO = imguiCreateGO("TBBottomLine", imguiRT(titleBarGO));
+        try { imguiSetRT(imguiRT(tbBGO), 0, 0, 1, 0, 16, 0, -16, 1); } catch (_) { }
+        imguiAddImage(tbBGO, cLine);
+
         const tbRT = imguiRT(titleBarGO);
         const titleTxtGO = imguiCreateGO("TTxt", tbRT); imguiFill(titleTxtGO);
+        try { imguiRT(titleTxtGO).method("set_offsetMin").invoke([16, 0]); } catch (_) {}
         let titleDisp = menuName;
         if (imguiKeyboardOpen || imguiSearchQuery.length > 0) {
             titleDisp += " - Search: " + imguiSearchQuery + (imguiKeyboardOpen ? "_" : "");
         }
-        imguiAddText(titleTxtGO, titleDisp, 11, [0.90, 0.75, 1.0, 1.0], 514);
+        imguiAddText(titleTxtGO, "● " + titleDisp, 11, cText0, 513);
 
-        // Search Button on Title Bar
+        // Docked watermark (top left)
+        const dWmGO = imguiCreateGO("DockedWM", tbRT);
+        try { imguiSetRT(imguiRT(dWmGO), 0, 0, 0, 1, PAD, PAD, 160, -PAD); } catch (_) { }
+        const dWmImg = imguiAddImage(dWmGO, cBg3); imguiApplyRounded(dWmImg, 0.7);
+        const dWmTxt = imguiCreateGO("DWMTxt", imguiRT(dWmGO)); imguiFill(dWmTxt);
+        imguiAddText(dWmTxt, "NOVA.lol | FPS: 144", 10, cText0, 514);
+ 
+
         const searchBtnGO = imguiCreateGO("SBtn", tbRT);
-        try { imguiSetRT(imguiRT(searchBtnGO), 1, 0, 1, 1, -64, PAD, -PAD, -PAD); } catch (_) { }
-        const sBtnImg = imguiAddImage(searchBtnGO, imguiKeyboardOpen ? [0.55, 0.18, 0.90, 1.0] : [0.35, 0.04, 0.10, 1.0]); imguiApplyRounded(sBtnImg);
+        try { imguiSetRT(imguiRT(searchBtnGO), 1, 0, 1, 1, -80, PAD, -PAD, -PAD); } catch (_) { }
+        const sBtnImg = imguiAddImage(searchBtnGO, imguiKeyboardOpen ? cPurple0 : cBg3); imguiApplyRounded(sBtnImg, 0.7);
         const sBtnTxt = imguiCreateGO("SBtnT", imguiRT(searchBtnGO)); imguiFill(sBtnTxt);
-        imguiAddText(sBtnTxt, "Search", 9, [1.0, 1.0, 1.0, 1.0], 514);
+        imguiAddText(sBtnTxt, "Search", 9, cText0, 514);
         imguiAllClickables.push({
-            px: CW - 64, py: cur + PAD, pw: 64 - PAD * 2, ph: TITLE_H - PAD * 2, action: () => {
+            px: CW - 80, py: PAD, pw: 80 - PAD * 2, ph: TITLE_H - PAD * 2, action: () => {
                 imguiKeyboardOpen = !imguiKeyboardOpen;
                 if (!imguiKeyboardOpen) {
                     imguiSearchQuery = "";
@@ -3255,222 +3373,213 @@ Il2Cpp.perform(async () => {
                 reloadMenu();
             }
         });
-        cur += TITLE_H;
-        { const s = imguiCreateGO("S0", bgRT); imguiAnchorTop(s, cur, SEP_H); imguiAddImage(s, [0.5, 0.1, 1.0, 0.30]); cur += SEP_H; }
-        // Tab row — show category 0 buttons as tabs
-        const tabRowGO = imguiCreateGO("Tabs", bgRT); imguiAnchorTop(tabRowGO, cur, TAB_H, 0);
-        imguiAddImage(tabRowGO, [0.06, 0.01, 0.12, 1.0]);
-        const tabRowRT = imguiRT(tabRowGO);
-        const mainCatBtns = buttons[0].filter((b: any) => b.method).slice(0, 9);
-        const tabW = Math.floor(CW / Math.max(1, mainCatBtns.length));
+
+        const sidebarGO = imguiCreateGO("Sidebar", innerBgRT);
+        try { imguiSetRT(imguiRT(sidebarGO), 0, 0, 0, 1, 0, 0, SIDEBAR_W, -TITLE_H); } catch (_) { }
+        const sbImg = imguiAddImage(sidebarGO, cBg1); imguiApplyRounded(sbImg, 0.25);
+        const sbRightLineGO = imguiCreateGO("SBRightLine", imguiRT(sidebarGO));
+        try { imguiSetRT(imguiRT(sbRightLineGO), 1, 0, 1, 1, -1, 0, 0, 0); } catch (_) { }
+        imguiAddImage(sbRightLineGO, cLine);
+
+        const sbRT = imguiRT(sidebarGO);
+        let curCatY = PAD;
+
+        const mainCatBtns = buttons[0].filter((b: any) => b.method).slice(0, 12);
         mainCatBtns.forEach((catBtn: any, ti: number) => {
-            const tGO = imguiCreateGO("T" + ti, tabRowRT);
-            try {
-                const rt = imguiRT(tGO);
-                if (rt && !rt.isNull?.()) {
-                    rt.method("set_anchorMin").invoke([0, 0]); rt.method("set_anchorMax").invoke([0, 1]);
-                    rt.method("set_offsetMin").invoke([ti * tabW + 2, 3]); rt.method("set_offsetMax").invoke([ti * tabW + tabW - 2, -3]);
-                }
-            } catch (_) { }
+            const tGO = imguiCreateGO("T" + ti, sbRT);
+            imguiAnchorTop(tGO, curCatY, CAT_H, PAD);
+            
             const isActive = currentCategory === 0 && ti === 0;
-            const tabImg = imguiAddImage(tGO, isActive ? [0.32, 0.08, 0.58, 1.0] : [0.10, 0.02, 0.20, 1.0]); imguiApplyRounded(tabImg);
+            
+            const tabImg = imguiAddImage(tGO, isActive ? cBg2 : [0,0,0,0]); imguiApplyRounded(tabImg);
+            if (isActive) {
+                const accentGO = imguiCreateGO("Accent", imguiRT(tGO));
+                try { imguiSetRT(imguiRT(accentGO), 0, 0, 0, 1, 0, 8, 3, -8); } catch (_) { }
+                imguiAddImage(accentGO, cPurple1);
+            }
+
             const tTxtGO = imguiCreateGO("TT", imguiRT(tGO)); imguiFill(tTxtGO);
-            const short = catBtn.buttonText.length > 9 ? catBtn.buttonText.slice(0, 8) + "…" : catBtn.buttonText;
-            imguiAddText(tTxtGO, short, 7, isActive ? [1.0, 0.9, 1.0, 1.0] : [0.65, 0.50, 0.82, 1.0], 514);
+            try { imguiRT(tTxtGO).method("set_offsetMin").invoke([PAD*2, 0]); } catch (_) {}
+            const short = catBtn.buttonText.length > 15 ? catBtn.buttonText.slice(0, 14) + "…" : catBtn.buttonText;
+            imguiAddText(tTxtGO, short, 11, isActive ? cText0 : cText1, 513);
+            
             imguiTabEntries.push({ img: tabImg, textComp: null, catIdx: ti } as any);
             const capCatBtn = catBtn;
-            imguiAllClickables.push({ px: ti * tabW + 2, py: cur + 3, pw: tabW - 4, ph: TAB_H - 6, action: () => { try { capCatBtn.method?.(); } catch (_) { } imguiNavIndex = 0; reloadMenu(); } });
+            imguiAllClickables.push({ px: PAD, py: curCatY + TITLE_H, pw: SIDEBAR_W - PAD*2, ph: CAT_H, action: () => { try { capCatBtn.method?.(); } catch (_) { } imguiNavIndex = 0; reloadMenu(); } });
+            
+            curCatY += CAT_H + 4;
         });
-        cur += TAB_H;
-        { const s = imguiCreateGO("S1", bgRT); imguiAnchorTop(s, cur, SEP_H); imguiAddImage(s, [0.4, 0.08, 0.80, 0.20]); cur += SEP_H; }
-        // Notification bar
-        const notifGO = imguiCreateGO("Notif", bgRT); imguiAnchorTop(notifGO, cur, NOTIF_H, PAD);
-        if (time > notifactionResetTime) currentNotification = "";
-        imguiNotifTextComp = imguiAddText(notifGO, currentNotification, 8, [1.0, 0.75, 1.0, 1.0], 514);
-        cur += NOTIF_H;
-        { const s = imguiCreateGO("S2", bgRT); imguiAnchorTop(s, cur, SEP_H); imguiAddImage(s, [0.4, 0.08, 0.80, 0.15]); cur += SEP_H; }
-        // Button rows
-        const btnAreaTop = cur;
+
+        const contentGO = imguiCreateGO("Content", innerBgRT);
+        try { imguiSetRT(imguiRT(contentGO), 0, 0, 1, 1, SIDEBAR_W, 0, 0, -TITLE_H); } catch (_) { }
+        const cRT = imguiRT(contentGO);
+
+        let cur = PAD*2;
+        const cHeaderGO = imguiCreateGO("CHeader", cRT); imguiAnchorTop(cHeaderGO, cur, 20, PAD*2);
+        let headerText = "Features";
+        imguiAddText(cHeaderGO, headerText, 14, cText0, 513);
+        const cHeaderLineGO = imguiCreateGO("CHLine", cRT); imguiAnchorTop(cHeaderLineGO, cur+24, 1, PAD*2);
+        imguiAddImage(cHeaderLineGO, cLine);
+        cur += 40;
+
         let allButtonsToDisplay: any[] = [];
-
-        if (currentCategory === 18) {
-            if (bagBuilderSelectingMode === "none") {
-                const rootGO = imguiCreateGO("RootBtn", bgRT); imguiAnchorTop(rootGO, btnAreaTop, BTN_H, PAD);
-                const rootImg = imguiAddImage(rootGO, [0.32, 0.10, 0.60, 1.0]); imguiApplyRounded(rootImg);
-                const rootTxtGO = imguiCreateGO("RootTxt", imguiRT(rootGO)); imguiFill(rootTxtGO);
-                try { imguiRT(rootTxtGO).method("set_offsetMin").invoke([10, 0]); } catch (_) { }
-                imguiAddText(rootTxtGO, "Root: " + bagBuilderRootItem, 10, [1, 1, 1, 1], 513);
-                imguiAllClickables.push({ px: PAD, py: btnAreaTop, pw: CW - PAD * 2, ph: BTN_H, action: () => { bagBuilderSelectingMode = "root"; currentPage = 0; imguiSearchQuery = ""; reloadMenu(); } });
-
-                const addGO = imguiCreateGO("AddBtn", bgRT); imguiAnchorTop(addGO, btnAreaTop + BTN_H + BTN_GAP, BTN_H, PAD);
-                const addImg = imguiAddImage(addGO, [0.20, 0.50, 0.20, 1.0]); imguiApplyRounded(addImg);
-                const addTxtGO = imguiCreateGO("AddTxt", imguiRT(addGO)); imguiFill(addTxtGO);
-                imguiAddText(addTxtGO, "+ Add Child Item", 10, [1, 1, 1, 1], 514);
-                imguiAllClickables.push({ px: PAD, py: btnAreaTop + BTN_H + BTN_GAP, pw: CW - PAD * 2, ph: BTN_H, action: () => { bagBuilderSelectingMode = "child"; currentPage = 0; imguiSearchQuery = ""; reloadMenu(); } });
-
-                const listStart = btnAreaTop + (BTN_H + BTN_GAP) * 2;
-                for (let i = 0; i < 4; i++) {
-                    const childIdx = currentPage * 4 + i;
-                    const yTop = listStart + i * (BTN_H + BTN_GAP);
-                    if (childIdx < bagBuilderChildren.length) {
-                        const childGO = imguiCreateGO("C" + i, bgRT); imguiAnchorTop(childGO, yTop, BTN_H, PAD);
-                        const childImg = imguiAddImage(childGO, [0.10, 0.02, 0.20, 1.0]); imguiApplyRounded(childImg);
-                        const childTxtGO = imguiCreateGO("CT" + i, imguiRT(childGO)); imguiFill(childTxtGO);
-                        try { imguiRT(childTxtGO).method("set_offsetMin").invoke([10, 0]); } catch (_) { }
-                        imguiAddText(childTxtGO, "- " + bagBuilderChildren[childIdx], 9, [0.8, 0.8, 0.8, 1.0], 513);
-
-                        const delGO = imguiCreateGO("CD" + i, imguiRT(childGO));
-                        try { imguiSetRT(imguiRT(delGO), 1, 0, 1, 1, -30, 4, -4, -4); } catch (_) { }
-                        const delImg = imguiAddImage(delGO, [0.8, 0.2, 0.2, 1.0]); imguiApplyRounded(delImg);
-                        const delTxtGO = imguiCreateGO("CDT" + i, imguiRT(delGO)); imguiFill(delTxtGO);
-                        imguiAddText(delTxtGO, "X", 10, [1, 1, 1, 1], 514);
-                        imguiAllClickables.push({ px: CW - PAD - 30, py: yTop + 4, pw: 26, ph: BTN_H - 8, action: () => { bagBuilderChildren.splice(childIdx, 1); reloadMenu(); } });
-                    }
-                }
-
-                const spawnY = btnAreaTop + 6 * (BTN_H + BTN_GAP);
-                const spawnGO = imguiCreateGO("SpawnBtn", bgRT);
-                try { imguiSetRT(imguiRT(spawnGO), 0, 1, 0.5, 1, PAD, -spawnY - BTN_H, -PAD / 2, -spawnY); } catch (_) { }
-                const spawnImg = imguiAddImage(spawnGO, [0.60, 0.20, 0.80, 1.0]); imguiApplyRounded(spawnImg);
-                const spawnTxtGO = imguiCreateGO("SpT", imguiRT(spawnGO)); imguiFill(spawnTxtGO);
-                imguiAddText(spawnTxtGO, "Spawn Bag", 10, [1, 1, 1, 1], 514);
-                imguiAllClickables.push({ px: PAD, py: spawnY, pw: CW / 2 - PAD * 1.5, ph: BTN_H, action: () => { spawnBagBuilder(); } });
-
-                const clearGO = imguiCreateGO("ClearBtn", bgRT);
-                try { imguiSetRT(imguiRT(clearGO), 0.5, 1, 1, 1, PAD / 2, -spawnY - BTN_H, -PAD, -spawnY); } catch (_) { }
-                const clearImg = imguiAddImage(clearGO, [0.80, 0.20, 0.20, 1.0]); imguiApplyRounded(clearImg);
-                const clearTxtGO = imguiCreateGO("ClT", imguiRT(clearGO)); imguiFill(clearTxtGO);
-                imguiAddText(clearTxtGO, "Clear Children", 10, [1, 1, 1, 1], 514);
-                imguiAllClickables.push({ px: CW / 2 + PAD / 2, py: spawnY, pw: CW / 2 - PAD * 1.5, ph: BTN_H, action: () => { bagBuilderChildren = []; reloadMenu(); } });
-
-                allButtonsToDisplay = new Array(Math.max(1, Math.ceil(bagBuilderChildren.length / 4)) * 8);
-            } else {
-                let filteredItems = typeof itemIDs !== 'undefined' ? itemIDs : [];
-                if (bagBuilderSelectingMode === "root") {
-                    filteredItems = filteredItems.filter(id => id.includes("backpack") || id.includes("quiver"));
-                }
-                if (imguiSearchQuery.length > 0) {
-                    const sq = imguiSearchQuery.toLowerCase();
-                    filteredItems = filteredItems.filter(id => id.toLowerCase().includes(sq));
-                }
-                allButtonsToDisplay = filteredItems as any[];
-
-                const targetItems = filteredItems.slice(currentPage * 8, currentPage * 8 + 8);
-                targetItems.forEach((id: string, i: number) => {
-                    const yTop = btnAreaTop + i * (BTN_H + BTN_GAP);
-                    const bGO = imguiCreateGO("I" + i, bgRT); imguiAnchorTop(bGO, yTop, BTN_H, PAD);
-                    const imgComp = imguiAddImage(bGO, [0.20, 0.05, 0.35, 1.0]); imguiApplyRounded(imgComp);
-                    const txtGO = imguiCreateGO("IT" + i, imguiRT(bGO)); imguiFill(txtGO);
-                    try { imguiRT(txtGO).method("set_offsetMin").invoke([10, 0]); } catch (_) { }
-                    imguiAddText(txtGO, id, 10, [1, 1, 1, 1], 513);
-                    imguiAllClickables.push({
-                        px: PAD, py: yTop, pw: CW - PAD * 2, ph: BTN_H, action: () => {
-                            if (bagBuilderSelectingMode === "root") bagBuilderRootItem = id;
-                            else if (bagBuilderSelectingMode === "child") bagBuilderChildren.push(id);
-                            bagBuilderSelectingMode = "none"; imguiSearchQuery = ""; currentPage = 0; reloadMenu();
-                        }
-                    });
-                });
-
-                const by = btnAreaTop + 7.5 * (BTN_H + BTN_GAP);
-                const bb = imguiCreateGO("BackBtn", bgRT); imguiAnchorTop(bb, by, BTN_H, PAD);
-                imguiAddImage(bb, [0.4, 0.1, 0.1, 1.0]);
-                const bt = imguiCreateGO("BkT", imguiRT(bb)); imguiFill(bt);
-                imguiAddText(bt, "Cancel Selection", 10, [1, 1, 1, 1], 514);
-                imguiAllClickables.push({ px: PAD, py: by, pw: CW - PAD * 2, ph: BTN_H, action: () => { bagBuilderSelectingMode = "none"; imguiSearchQuery = ""; currentPage = 0; reloadMenu(); } });
+        
+        allButtonsToDisplay = buttons[currentCategory] || [];
+        if (imguiSearchQuery.length > 0) {
+            const sq = imguiSearchQuery.toLowerCase();
+            allButtonsToDisplay = [];
+            for (let c = 0; c < buttons.length; c++) {
+                const cbts = buttons[c].filter((b: any) => b.buttonText.toLowerCase().includes(sq) && b.method);
+                allButtonsToDisplay.push(...cbts);
             }
-        } else {
-            allButtonsToDisplay = buttons[currentCategory] || [];
-            if (imguiSearchQuery.length > 0) {
-                const sq = imguiSearchQuery.toLowerCase();
-                allButtonsToDisplay = [];
-                for (let c = 0; c < buttons.length; c++) {
-                    const cbts = buttons[c].filter((b: any) => b.buttonText.toLowerCase().includes(sq) && b.method);
-                    allButtonsToDisplay.push(...cbts);
-                }
-            }
-            const targetMods = allButtonsToDisplay.slice(currentPage * 8, currentPage * 8 + 8);
-            if (imguiNavIndex >= targetMods.length) imguiNavIndex = Math.max(0, targetMods.length - 1);
-            targetMods.forEach((buttonData: any, i: number) => {
-                const yTop = btnAreaTop + i * (BTN_H + BTN_GAP);
-                const bGO = imguiCreateGO("B" + i, bgRT); imguiAnchorTop(bGO, yTop, BTN_H, PAD);
-                const isSelected = (i === imguiNavIndex);
-                const isEnabled = !!buttonData.enabled;
-                let btnColor2: [number, number, number, number];
-                if (isEnabled && isSelected) btnColor2 = [0.55, 0.18, 0.90, 1.0];
-                else if (isEnabled) btnColor2 = [0.32, 0.10, 0.60, 1.0];
-                else if (isSelected) btnColor2 = [0.22, 0.06, 0.40, 1.0];
-                else btnColor2 = [0.10, 0.02, 0.20, 1.0];
-                const imgComp = imguiAddImage(bGO, btnColor2); imguiApplyRounded(imgComp);
-                const bRT2 = imguiRT(bGO);
-                // Checkbox
-                const cbGO = imguiCreateGO("CB" + i, bRT2);
-                try {
-                    const cbrt = imguiRT(cbGO);
-                    if (cbrt && !cbrt.isNull?.()) {
-                        cbrt.method("set_anchorMin").invoke([0, 0]); cbrt.method("set_anchorMax").invoke([0, 1]);
-                        cbrt.method("set_offsetMin").invoke([6, 4]); cbrt.method("set_offsetMax").invoke([26, -4]);
-                    }
-                } catch (_) { }
-                const cbImg = imguiAddImage(cbGO, isEnabled ? [0.70, 0.20, 1.0, 1.0] : [0.20, 0.05, 0.38, 1.0]); imguiApplyRounded(cbImg);
-                const cbTxtGO = imguiCreateGO("CBT", imguiRT(cbGO)); imguiFill(cbTxtGO);
-                imguiAddText(cbTxtGO, isEnabled ? "✓" : " ", 9, [1, 1, 1, 1], 514);
-                // Label
-                const bTextGO = imguiCreateGO("BT2", bRT2); imguiFill(bTextGO);
-                try { const r = imguiRT(bTextGO); if (r && !r.isNull?.()) r.method("set_offsetMin").invoke([30, 0]); } catch (_) { }
-                const txtColor: [number, number, number, number] = isSelected ? [1.0, 0.90, 1.0, 1.0] : isEnabled ? [1.0, 1.0, 1.0, 1.0] : [0.75, 0.60, 0.90, 1.0];
-                const textComp = imguiAddText(bTextGO, buttonData.buttonText, 10, txtColor, 513);
-                imguiButtonEntries.push({ go: bGO, img: imgComp, textComp, btnData: buttonData } as any);
-                const capBtn = buttonData;
-                imguiAllClickables.push({
-                    px: PAD, py: yTop, pw: CW - PAD * 2, ph: BTN_H,
-                    modIdx: i,
-                    action: () => {
-                        if (!capBtn) return;
-                        if (capBtn.isTogglable) {
-                            capBtn.enabled = !capBtn.enabled;
-                            if (capBtn.enabled) { if (capBtn.toolTip) sendNotification("[ON] " + capBtn.toolTip, false); try { capBtn.enableMethod?.(); } catch (e) { capBtn.enabled = false; } }
-                            else { if (capBtn.toolTip) sendNotification("[OFF] " + capBtn.toolTip, false); try { capBtn.disableMethod?.(); } catch (e) { } }
-                            reloadMenu();
-                        } else {
-                            try { capBtn.method?.(); } catch (e) { }
-                            if (capBtn.toolTip) sendNotification(capBtn.toolTip, false);
-                            imguiNavIndex = 0; reloadMenu();
-                        }
-                    }
-                });
-            });
         }
-        cur = btnAreaTop + BTN_ROWS * (BTN_H + BTN_GAP);
-        { const s = imguiCreateGO("S3", bgRT); imguiAnchorTop(s, cur, SEP_H); imguiAddImage(s, [0.4, 0.08, 0.80, 0.15]); cur += SEP_H; }
-        // Nav bar
-        const navGO = imguiCreateGO("Nav", bgRT); imguiAnchorTop(navGO, cur, NAV_H, 0);
-        imguiAddImage(navGO, [0.06, 0.01, 0.14, 1.0]);
-        const navRT = imguiRT(navGO); const navTop = cur;
-        const prevGO = imguiCreateGO("Pv", navRT); try { imguiSetRT(imguiRT(prevGO), 0, 0, 0, 1, PAD, PAD, 68, -PAD); } catch (_) { }
-        const pvI = imguiAddImage(prevGO, buttonColor); imguiApplyRounded(pvI);
-        const pvT = imguiCreateGO("PvT", imguiRT(prevGO)); imguiFill(pvT); imguiAddText(pvT, "◀ Prev", 9, textColor, 514);
-        imguiAllClickables.push({ px: PAD, py: navTop, pw: 64, ph: NAV_H, action: () => { const b = buttons[1].find((x: any) => x.buttonText === "PreviousPage"); if (b?.method) try { b.method(); } catch (_) { } imguiNavIndex = 0; reloadMenu(); } });
-        const backGO = imguiCreateGO("Bk", navRT); try { imguiSetRT(imguiRT(backGO), 0, 0, 0, 1, 70, PAD, 120, -PAD); } catch (_) { }
-        const bkI = imguiAddImage(backGO, [0.14, 0.02, 0.28, 1.0]); imguiApplyRounded(bkI);
-        const bkT = imguiCreateGO("BkT", imguiRT(backGO)); imguiFill(bkT); imguiAddText(bkT, "⬅ Back", 9, [0.8, 0.6, 1.0, 1.0], 514);
-        imguiAllClickables.push({ px: 70, py: navTop, pw: 50, ph: NAV_H, action: () => { currentCategory = 0; currentPage = 0; imguiNavIndex = 0; reloadMenu(); } });
-        const totalPages = Math.max(1, Math.ceil(allButtonsToDisplay.length / 8));
-        const pgGO = imguiCreateGO("Pg", navRT); try { imguiSetRT(imguiRT(pgGO), 0, 0, 1, 1, 122, 0, -122, 0); } catch (_) { }
-        imguiPageTextComp = imguiAddText(pgGO, `${currentPage + 1}/${totalPages}`, 9, [0.70, 0.50, 1.0, 0.90], 514);
-        const nextGO = imguiCreateGO("Nx", navRT); try { imguiSetRT(imguiRT(nextGO), 1, 0, 1, 1, -120, PAD, -70, -PAD); } catch (_) { }
-        const nxI = imguiAddImage(nextGO, buttonColor); imguiApplyRounded(nxI);
-        const nxT = imguiCreateGO("NxT", imguiRT(nextGO)); imguiFill(nxT); imguiAddText(nxT, "Next ▶", 9, textColor, 514);
-        imguiAllClickables.push({ px: CW - 120, py: navTop, pw: 50, ph: NAV_H, action: () => { const b = buttons[1].find((x: any) => x.buttonText === "NextPage"); if (b?.method) try { b.method(); } catch (_) { } imguiNavIndex = 0; reloadMenu(); } });
-        const discGO = imguiCreateGO("Dc", navRT); try { imguiSetRT(imguiRT(discGO), 1, 0, 1, 1, -68, PAD, -PAD, -PAD); } catch (_) { }
-        const dcI = imguiAddImage(discGO, [0.35, 0.04, 0.10, 1.0]); imguiApplyRounded(dcI);
-        const dcT = imguiCreateGO("DcT", imguiRT(discGO)); imguiFill(dcT); imguiAddText(dcT, "✖", 9, [1.0, 0.5, 0.5, 1.0], 514);
-        imguiAllClickables.push({ px: CW - 68, py: navTop, pw: 64, ph: NAV_H, action: () => { const b = buttons[1].find((x: any) => x.buttonText === "Disconnect"); if (b?.method) try { b.method(); } catch (_) { } } });
+        
+        const ITEMS_PER_PAGE = 14;
+        const targetMods = allButtonsToDisplay.slice(currentPage * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE + ITEMS_PER_PAGE);
+        if (imguiNavIndex >= targetMods.length) imguiNavIndex = Math.max(0, targetMods.length - 1);
+        
+        const GRID_COLUMNS = 2;
+        const itemW = (CONTENT_W - PAD * 5) / GRID_COLUMNS;
+        
+        targetMods.forEach((buttonData: any, i: number) => {
+            const col = i % GRID_COLUMNS;
+            const row = Math.floor(i / GRID_COLUMNS);
+            
+            const xPos = PAD*2 + col * (itemW + PAD);
+            const yPos = cur + row * (BTN_H + BTN_GAP);
+            
+            const bGO = imguiCreateGO("B" + i, cRT); 
+            try { imguiSetRT(imguiRT(bGO), 0, 1, 0, 1, xPos, -yPos - BTN_H, xPos + itemW, -yPos); } catch (_) {}
+            
+            const isSelected = (i === imguiNavIndex);
+            const isEnabled = !!buttonData.enabled;
+            
+            const imgComp = imguiAddImage(bGO, isSelected ? cBg3 : cBg1); imguiApplyRounded(imgComp);
+            if (isSelected) {
+                 const bbGO = imguiCreateGO("bb", imguiRT(bGO)); try{imguiSetRT(imguiRT(bbGO),0,0,1,1,-1,-1,1,1);}catch(_){}
+                 const bbImg = imguiAddImage(bbGO, cPurple0); imguiApplyRounded(bbImg);
+                 try { imguiRT(imgComp).method("SetAsLastSibling").invoke(); } catch (_) {}
+            }
+
+            const bRT2 = imguiRT(bGO);
+            const cbGO = imguiCreateGO("CB" + i, bRT2);
+            try {
+                const cbrt = imguiRT(cbGO);
+                if (cbrt && !cbrt.isNull?.()) {
+                    cbrt.method("set_anchorMin").invoke([0, 0.5]); cbrt.method("set_anchorMax").invoke([0, 0.5]);
+                    cbrt.method("set_sizeDelta").invoke([16, 16]); cbrt.method("set_anchoredPosition").invoke([16, 0]);
+                }
+            } catch (_) { }
+            const cbImg = imguiAddImage(cbGO, isEnabled ? cPurple1 : cBg0); imguiApplyRounded(cbImg);
+            
+            const cbTxtGO = imguiCreateGO("CBT", imguiRT(cbGO)); imguiFill(cbTxtGO);
+            imguiAddText(cbTxtGO, isEnabled ? "✓" : " ", 10, cText0, 514);
+            
+            const bTextGO = imguiCreateGO("BT2", bRT2); imguiFill(bTextGO);
+            try { const r = imguiRT(bTextGO); if (r && !r.isNull?.()) r.method("set_offsetMin").invoke([36, 0]); } catch (_) { }
+            const txtColor = isEnabled ? cText0 : cText1;
+            const textComp = imguiAddText(bTextGO, buttonData.buttonText, 11, txtColor, 513);
+            
+            imguiButtonEntries.push({ go: bGO, img: imgComp, textComp, btnData: buttonData } as any);
+            const capBtn = buttonData;
+            imguiAllClickables.push({
+                px: SIDEBAR_W + xPos, py: TITLE_H + yPos, pw: itemW, ph: BTN_H,
+                modIdx: i,
+                action: () => {
+                    if (!capBtn) return;
+                    if (capBtn.isTogglable) {
+                        capBtn.enabled = !capBtn.enabled;
+                        if (capBtn.enabled) { try { capBtn.enableMethod?.(); } catch (e) { capBtn.enabled = false; } }
+                        else { try { capBtn.disableMethod?.(); } catch (e) { } }
+                        reloadMenu();
+                    } else {
+                        try { capBtn.method?.(); } catch (e) { }
+                        imguiNavIndex = -1; 
+                        reloadMenu();
+                    }
+                }
+            });
+        });
+
+        const totalPages = Math.max(1, Math.ceil(allButtonsToDisplay.length / ITEMS_PER_PAGE));
+        const navY = CH - TITLE_H - NAV_H - PAD;
+        
+        const pvGO = imguiCreateGO("Pv", cRT); 
+        try { imguiSetRT(imguiRT(pvGO), 0, 1, 0, 1, PAD*2, -navY - NAV_H, PAD*2 + 80, -navY); } catch (_) { }
+        const pvImg = imguiAddImage(pvGO, cBg2); imguiApplyRounded(pvImg);
+        const pvT = imguiCreateGO("PvT", imguiRT(pvGO)); imguiFill(pvT); imguiAddText(pvT, "Prev", 10, cText1, 514);
+        imguiAllClickables.push({ px: SIDEBAR_W + PAD*2, py: TITLE_H + navY, pw: 80, ph: NAV_H, action: () => { currentPage--; if (currentPage < 0) currentPage = totalPages - 1; imguiNavIndex = -1; reloadMenu(); } });
+
+        const pgGO = imguiCreateGO("Pg", cRT); 
+        try { imguiSetRT(imguiRT(pgGO), 0, 1, 0, 1, PAD*2 + 90, -navY - NAV_H, PAD*2 + 150, -navY); } catch (_) { }
+        imguiPageTextComp = imguiAddText(pgGO, `${currentPage + 1}/${totalPages}`, 10, cText2, 514);
+
+        const nxGO = imguiCreateGO("Nx", cRT); 
+        try { imguiSetRT(imguiRT(nxGO), 0, 1, 0, 1, PAD*2 + 160, -navY - NAV_H, PAD*2 + 240, -navY); } catch (_) { }
+        const nxImg = imguiAddImage(nxGO, cBg2); imguiApplyRounded(nxImg);
+        const nxT = imguiCreateGO("NxT", imguiRT(nxGO)); imguiFill(nxT); imguiAddText(nxT, "Next", 10, cText1, 514);
+        imguiAllClickables.push({ px: SIDEBAR_W + PAD*2 + 160, py: TITLE_H + navY, pw: 80, ph: NAV_H, action: () => { currentPage++; if (currentPage >= totalPages) currentPage = 0; imguiNavIndex = -1; reloadMenu(); } });
+
+        const bkGO = imguiCreateGO("Bk", cRT); 
+        try { imguiSetRT(imguiRT(bkGO), 0, 1, 0, 1, PAD*2 + 250, -navY - NAV_H, PAD*2 + 330, -navY); } catch (_) { }
+        const bkImg = imguiAddImage(bkGO, cBg2); imguiApplyRounded(bkImg);
+        const bkT = imguiCreateGO("BkT", imguiRT(bkGO)); imguiFill(bkT); imguiAddText(bkT, "Back", 10, cText1, 514);
+        imguiAllClickables.push({ px: SIDEBAR_W + PAD*2 + 250, py: TITLE_H + navY, pw: 80, ph: NAV_H, action: () => { currentCategory = 0; currentPage = 0; imguiNavIndex = -1; reloadMenu(); } });
+
+        const dcGO = imguiCreateGO("Dc", cRT);
+        try { imguiSetRT(imguiRT(dcGO), 1, 1, 1, 1, -68-PAD*2, -navY - NAV_H, -PAD*2, -navY); } catch (_) { }
+        const dcImg = imguiAddImage(dcGO, [0.35, 0.04, 0.10, 1.0]); imguiApplyRounded(dcImg);
+        const dcT = imguiCreateGO("DcT", imguiRT(dcGO)); imguiFill(dcT); imguiAddText(dcT, "Leave", 10, cRed, 514);
+        imguiAllClickables.push({ px: CW - 68 - PAD*2, py: TITLE_H + navY, pw: 68, ph: NAV_H, action: () => { const b = buttons[1].find((x: any) => x.buttonText === "Disconnect"); if (b?.method) try { b.method(); } catch (_) { } } });
+
+        // ── First-open loading screen ───────────────────────────────────────────
+        if (imguiFirstOpen) {
+            imguiFirstOpen = false;
+            imguiLoadScreenTimer = 0;
+            try {
+                const lsGO = imguiCreateGO("LoadScreen", canvasRT);
+                imguiLoadScreenGO = lsGO;
+                imguiFill(lsGO);
+                // Dark full-screen overlay
+                const lsBg = imguiAddImage(lsGO, [11/255, 10/255, 16/255, 1.0]); imguiApplyRounded(lsBg);
+                // Subtle purple glow behind logo
+                const lsGlowGO = imguiCreateGO("LSGlow", imguiRT(lsGO));
+                try { imguiSetRT(imguiRT(lsGlowGO), 0.5, 0.5, 0.5, 0.5, -160, -80, 160, 80); } catch (_) { }
+                imguiAddImage(lsGlowGO, [124/255, 58/255, 237/255, 0.15]);
+                // Logo text
+                const lsTxtGO = imguiCreateGO("LSTxt", imguiRT(lsGO));
+                try { imguiSetRT(imguiRT(lsTxtGO), 0.5, 0.5, 0.5, 0.5, -200, 10, 200, 60); } catch (_) { }
+                imguiAddText(lsTxtGO, "✦  NOVA  ✦", 32, [236/255, 233/255, 247/255, 1.0], 514);
+                // Subtitle
+                const lsSubGO = imguiCreateGO("LSSub", imguiRT(lsGO));
+                try { imguiSetRT(imguiRT(lsSubGO), 0.5, 0.5, 0.5, 0.5, -160, -20, 160, 10); } catch (_) { }
+                imguiAddText(lsSubGO, "guns.lol/novarr", 11, [124/255, 58/255, 237/255, 1.0], 514);
+                // Loading bar background
+                const lsBarBgGO = imguiCreateGO("LSBarBg", imguiRT(lsGO));
+                try { imguiSetRT(imguiRT(lsBarBgGO), 0.5, 0.5, 0.5, 0.5, -150, -50, 150, -34); } catch (_) { }
+                const lsBarBgImg = imguiAddImage(lsBarBgGO, [36/255, 29/255, 53/255, 1.0]); imguiApplyRounded(lsBarBgImg);
+                // Loading bar fill (animated in updateAnimations via scale)
+                const lsBarGO = imguiCreateGO("LSBar", imguiRT(lsBarBgGO));
+                try { imguiSetRT(imguiRT(lsBarGO), 0, 0, 1, 1, 1, 1, -1, -1); } catch (_) { }
+                imguiAddImage(lsBarGO, [124/255, 58/255, 237/255, 1.0]);
+                // Loading label
+                const lsLblGO = imguiCreateGO("LSLbl", imguiRT(lsGO));
+                try { imguiSetRT(imguiRT(lsLblGO), 0.5, 0.5, 0.5, 0.5, -150, -70, 150, -50); } catch (_) { }
+                imguiAddText(lsLblGO, "Loading…", 10, [168/255, 159/255, 196/255, 1.0], 514);
+            } catch (_) { }
+        }
+
+        /* HUD handles notifications now */
+
+
         if (imguiKeyboardOpen) {
-            let kbTop = cur + 16;
-            { const s = imguiCreateGO("S3", bgRT); imguiAnchorTop(s, kbTop, SEP_H); imguiAddImage(s, [0.4, 0.08, 0.80, 0.15]); kbTop += SEP_H; }
+            let kbTop = TITLE_H + CH + PAD;
+            const kbBgGO = imguiCreateGO("KbBg", innerBgRT);
+            try { imguiSetRT(imguiRT(kbBgGO), 0, 1, 1, 1, 0, -kbTop - 162, 0, -kbTop); } catch (_) { }
+            imguiAddImage(kbBgGO, cBg1);
+            
             const KB_PAD = 8;
-            const KB_H = 30;
+            const KB_H = 32;
             const KB_GAP = 6;
             const rows = [
                 ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
@@ -3495,11 +3604,11 @@ Il2Cpp.perform(async () => {
                     if (rIdx === 2 && kIdx === 0) x += standardKeyW * 1.5 + KB_GAP * 1.5;
                     if (rIdx === 3 && kIdx === 0) x += standardKeyW * 1.5 + KB_GAP * 1.5;
 
-                    const bGO = imguiCreateGO("KB_" + key, bgRT);
+                    const bGO = imguiCreateGO("KB_" + key, innerBgRT);
                     try { imguiSetRT(imguiRT(bGO), 0, 1, 0, 1, x, -y - KB_H, x + w, -y); } catch (_) { }
-                    const imgComp = imguiAddImage(bGO, [0.2, 0.05, 0.3, 1.0]); imguiApplyRounded(imgComp);
+                    const imgComp = imguiAddImage(bGO, cBg2); imguiApplyRounded(imgComp);
                     const txtGO = imguiCreateGO("KBT_" + key, imguiRT(bGO)); imguiFill(txtGO);
-                    imguiAddText(txtGO, key, 10, [1, 1, 1, 1], 514);
+                    imguiAddText(txtGO, key, 11, cText0, 514);
 
                     imguiAllClickables.push({
                         px: x, py: y, pw: w, ph: KB_H, action: () => {
@@ -3513,62 +3622,15 @@ Il2Cpp.perform(async () => {
                                 imguiSearchQuery += key;
                             }
                             currentPage = 0;
-                            imguiNavIndex = 0;
+                            imguiNavIndex = -1;
                             reloadMenu();
                         }
                     });
                     x += w + KB_GAP;
                 });
             });
-            cur += SEP_H + KB_PAD + 4 * (KB_H + KB_GAP);
         }
 
-        // @ts-ignore
-        if (typeof imguiShowSpawnInfo !== 'undefined' && imguiShowSpawnInfo) {
-            const SIDE_W = 160;
-            const INFO_H = 120;
-            const s = imguiCreateGO("SInfoBg", bgRT);
-            try {
-                const rt = imguiRT(s);
-                if (rt && !rt.isNull?.()) {
-                    rt.method("set_anchorMin").invoke([1, 1]);
-                    rt.method("set_anchorMax").invoke([1, 1]);
-                    rt.method("set_offsetMin").invoke([PAD, -INFO_H - TITLE_H]);
-                    rt.method("set_offsetMax").invoke([PAD + SIDE_W, -TITLE_H]);
-                }
-            } catch (_) { }
-            const imgInfo = imguiAddImage(s, [0.12, 0.02, 0.18, 0.95]);
-            imguiApplyRounded(imgInfo);
-
-            const infoTxtGO = imguiCreateGO("SpawnInfoTxt", imguiRT(s));
-            try {
-                const rt = imguiRT(infoTxtGO);
-                if (rt && !rt.isNull?.()) {
-                    rt.method("set_anchorMin").invoke([0, 0]);
-                    rt.method("set_anchorMax").invoke([1, 1]);
-                    rt.method("set_offsetMin").invoke([PAD, PAD]);
-                    rt.method("set_offsetMax").invoke([-PAD, -PAD]);
-                }
-            } catch (_) { }
-
-            // @ts-ignore
-            const mobName = (typeof mobIDs !== 'undefined' && typeof mobIndex !== 'undefined' && mobIDs[mobIndex]) ? mobIDs[mobIndex].name : "None";
-            // @ts-ignore
-            const prefabName = (typeof prefabIDs !== 'undefined' && typeof prefabIndex !== 'undefined' && prefabIDs[prefabIndex]) ? prefabIDs[prefabIndex] : "None";
-            // @ts-ignore
-            const itemName = (typeof itemIDs !== 'undefined' && typeof itemIndex !== 'undefined' && itemIDs[itemIndex]) ? itemIDs[itemIndex] : "None";
-            // @ts-ignore
-            const dupeAmt = typeof ejectDupeAmount !== 'undefined' ? ejectDupeAmount : 0;
-            // @ts-ignore
-            const stashEnabled = typeof stashDupeEnabled !== 'undefined' ? stashDupeEnabled : false;
-
-            const textContent = `<color=#A060FF><b>Selected Info</b></color>\n\n<color=#E0E0E0>Mob:</color> ${mobName}\n<color=#E0E0E0>Prefab:</color> ${prefabName}\n<color=#E0E0E0>Item:</color> ${itemName}\n<color=#E0E0E0>Dupe Amt:</color> ${dupeAmt}\n<color=#E0E0E0>Stash Dupe:</color> ${stashEnabled ? "<color=#00FF00>ON</color>" : "<color=#FF0000>OFF</color>"}`;
-
-            const txt = imguiAddText(infoTxtGO, textContent, 9, [1, 1, 1, 1], 513);
-            try { txt.method("set_alignment").invoke(257); /* TopLeft */ } catch (_) { }
-        }
-
-        // Crosshair cursor
         const cursorRootGO = imguiCreateGO("Cur", canvasRT); imguiCursorRT = imguiRT(cursorRootGO);
         try {
             if (imguiCursorRT && !imguiCursorRT.isNull?.()) {
@@ -3585,8 +3647,15 @@ Il2Cpp.perform(async () => {
             const img = imguiAddImage(g, [0, 0, 0, 0]); imguiApplyRounded(img); return img;
         };
         const cDot = mkSeg("cDot", 6, 6, 0, 0);
-        imguiCursorRingRT = null;
-        imguiCursorRingImg = null;
+        const ringGO = imguiCreateGO("cRing", imguiCursorRT);
+        imguiCursorRingRT = imguiRT(ringGO);
+        try {
+            if (imguiCursorRingRT && !imguiCursorRingRT.isNull?.()) {
+                imguiCursorRingRT.method("set_anchorMin").invoke([0.5, 0.5]); imguiCursorRingRT.method("set_anchorMax").invoke([0.5, 0.5]);
+                imguiCursorRingRT.method("set_sizeDelta").invoke([24, 24]); imguiCursorRingRT.method("set_anchoredPosition").invoke([0, 0]);
+            }
+        } catch (_) { }
+        imguiCursorRingImg = imguiAddText(ringGO, "O", 22, [0, 0, 0, 0], 514);
         imguiCursorImg = cDot; imguiCursorParts = [cDot];
     }
     // ══════════════════════════════════════════════════════════════════════════
@@ -4884,6 +4953,7 @@ Il2Cpp.perform(async () => {
     function setPcFlyEnabled(on: boolean) {
         if (on === pcFlyEnabled) return;
         pcFlyEnabled = on;
+        PCEnabled = on;
         pcFlyLog("setPcFlyEnabled(" + on + ")");
         if (pcFlyBtnRef) pcFlyBtnRef.enabled = on;
         const loco = getLoco();
@@ -5035,7 +5105,7 @@ Il2Cpp.perform(async () => {
                 }
 
                 // OR Option B: Spawn a specific word instantly
-                // spawnTextAsItemsInFront("NOVA"); 
+                spawnTextAsItemsInFront("NOVA"); 
             }
             if (pcWinKeyEdge(0x39)) {
                 nuclearDespawnAllItems();
@@ -5058,27 +5128,7 @@ Il2Cpp.perform(async () => {
                 }
             }
             // --- 3. ENTER SPAWN ---
-            try {
-                // 0x0D is the raw Virtual Key code for Enter
-                const isEnterDown = ((GetAsyncKeyState(0x0D) as number) & 0x8000) !== 0;
-
-                if (isEnterDown) {
-                    pcFlyLog("Direct Enter detected! Spawning...");
-
-                    const spawnPos = rightHandTransform.method("get_position").invoke();
-                    const rot = rightHandTransform.method("get_rotation").invoke();
-                    const targetItem = "item_fish_nebula_fish";
-                    const spawnCount = 50;
-
-                    for (let i = 0; i < spawnCount; i++) {
-                        spawnItemAtPos(targetItem, spawnPos, rot);
-                    }
-
-                    sendNotification("Spawned " + spawnCount + " Cases!", false, 1);
-                }
-            } catch (e) {
-                smartError("Direct Enter check failed:", e);
-            }
+           
 
             // --- 4. MOVEMENT CALCULATION ---
             const bodyTF = getTransform(loco);
@@ -17930,12 +17980,85 @@ Il2Cpp.perform(async () => {
                 const spd = 1.0 / 0.18;
                 if (shouldShowMenu) imguiAnimProg = Math.min(1.0, imguiAnimProg + deltaTime * spd);
                 else imguiAnimProg = Math.max(0.0, imguiAnimProg - deltaTime * spd);
+    function renderAndUpdateHUD() {
+        if (!CanvasClass || !UIImageClass || !TextMeshProUGUIClass) return;
+
+        if (!hudCanvas || hudCanvas.isNull?.()) {
+            const hGO = imguiCreateGO("ImGuiHUD");
+            if (!hGO) return;
+            hudCanvas = hGO;
+            try {
+                const canvas = hudCanvas.method("AddComponent", 1).inflate(CanvasClass).invoke();
+                canvas.method("set_renderMode").invoke(2);
+                try { canvas.method("set_overrideSorting").invoke(true); } catch (_) { }
+                try { canvas.method("set_sortingOrder").invoke(32767); } catch (_) { }
+                try { canvas.method("set_sortingLayerName").invoke(Il2Cpp.string("UI")); } catch (_) {
+                    try { canvas.method("set_sortingLayerName").invoke(Il2Cpp.string("TransparentFX")); } catch (_) { }
+                }
+            } catch (_) { }
+            
+            try {
+                const rt = imguiRT(hudCanvas);
+                if (rt && !rt.isNull?.()) rt.method("set_sizeDelta").invoke([300, 200]);
+            } catch (_) { }
+
+            const cBg1: [number,number,number,number] = [0.06, 0.06, 0.06, 1.0];
+            const cPurple1: [number,number,number,number] = [0.15, 0.15, 0.15, 1.0];
+
+            // Watermark removed — menu opens by default
+            hudWatermark = null;
+            hudClickable = null;
+
+            // Notifications completely disabled
+            hudNotifGO = null;
+        }
+
+        try {
+            const handTf = leftHandTransform; // always left hand as requested
+            if (handTf && !handTf.isNull?.()) {
+                const pos = readVec3Components(handTf.method("get_position").invoke());
+                const up = readVec3Components(handTf.method("get_up").invoke());
+                
+                // Position slightly above the wrist
+                const offset = 0.15;
+                const finalPos = [
+                    pos[0] + up[0] * offset,
+                    pos[1] + up[1] * offset,
+                    pos[2] + up[2] * offset
+                ];
+                getTransform(hudCanvas).method("set_position").invoke(finalPos);
+                
+                if (headCollider && !headCollider.isNull?.()) {
+                    const headPos = readVec3Components(getTransform(headCollider).method("get_position").invoke());
+                    const away: [number,number,number] = [finalPos[0] - headPos[0], finalPos[1] - headPos[1], finalPos[2] - headPos[2]];
+                    const rot = Quaternion.method("LookRotation", 2).invoke(away, [0, 1, 0]);
+                    getTransform(hudCanvas).method("set_rotation").invoke(rot);
+                }
+                
+                let playerScale = 1.0;
+                try { playerScale = GTPlayer.field("<playerScale>k__BackingField").value as number || 1.0; } catch (_) { }
+                const s = 0.00035 * playerScale * menuscale;
+                getTransform(hudCanvas).method("set_localScale").invoke([s, s, s]);
+            }
+        } catch (_) { }
+
+        // Watermark removed — no visibility toggle needed
+        
+        if (hudNotifGO && !hudNotifGO.isNull?.()) {
+            if (currentNotification !== "" && time <= notifactionResetTime) {
+                getTransform(hudNotifGO).method("set_localScale").invoke([1, 1, 1]);
+                try { imguiNotifTextComp.method("set_text").invoke(Il2Cpp.string(currentNotification)); } catch (_) { }
+            } else {
+                getTransform(hudNotifGO).method("set_localScale").invoke([0, 0, 0]);
+            }
+        }
+    }
 
                 if (imguiMode) {
+                    renderAndUpdateHUD();
                     const visible = imguiAnimProg > 0.001;
                     if (visible) {
-                        if (currentNotification != "" && time > notifactionResetTime) reloadMenu();
-                        if (menu == null) renderMenuImGui();
+                        if (menu == null) { try { renderMenuImGui(); } catch (e) { console.error("[ImGui] renderMenuImGui failed (will retry next frame):", e); menu = null; } }
                         else {
                             imguiUpdateAnimations();
                             imguiUpdateCursor();
@@ -17943,7 +18066,7 @@ Il2Cpp.perform(async () => {
                         }
                     } else {
                         if (menu != null) { Destroy(menu); menu = null; imguiFixedPos = null; imguiFixedRot = null; }
-                        cleanupImguiPointerLine();
+                        imguiUpdateCursor();
                     }
                 } else {
                     const visible = imguiAnimProg > 0.001;
