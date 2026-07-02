@@ -1370,18 +1370,38 @@ Il2Cpp.perform(async () => {
     const NULL = Il2Cpp.reference(Il2Cpp.domain.assembly("mscorlib").image.class("System.Object").alloc());
     let lastHeldItemName = "Nothing";
 
-    function spawnItemAtPos(bareID: string, pos: any, rot: any): any {
+    let ItemSpawnSourceEnum = null;
+    try {
+        ItemSpawnSourceEnum = AssemblyCSharp.class("AnimalCompany.ItemSpawnSource");
+    } catch (_) { }
+
+    const DEFAULT_ITEM_SPAWN_SOURCE = ItemSpawnSourceEnum
+        ? (ItemSpawnSourceEnum.field("Player")?.value ?? ItemSpawnSourceEnum.field("World")?.value ?? 0)
+        : 0;
+
+    const spawnItemAsyncMethod = PrefabGen.method("SpawnItemAsync", 5)
+        .overload(
+            "System.String",
+            "UnityEngine.Vector3",
+            "UnityEngine.Quaternion",
+            "Fusion.NetworkObjectSpawnDelegate",
+            "AnimalCompany.ItemSpawnSource"
+        );
+
+    // Drop-in replacement — same signature as before.
+    // NOTE: this is now fire-and-forget async. The return value is NOT the
+    // spawned object anymore (that's not available synchronously with this API).
+    // If callers relied on the return value, they need a callback instead —
+    // see spawnItemAtPosCb below.
+    function spawnItemAtPos(bareID, pos, rot, delegateCallback) {
         try {
-            const prefab = PrefabGen.method("GetItemPrefab", 1).invoke(Il2Cpp.string(bareID));
-            if (prefab && !prefab.isNull()) {
-                const result = PrefabGen.method("SpawnItem", 4).invoke(prefab, pos, rot, NULL);
-                if (result && !result.isNull()) return result;
-            }
-            const result2 = PrefabGen.method("SpawnItem", 4).invoke(Il2Cpp.string(bareID), pos, rot, NULL);
-            if (result2 && !result2.isNull()) return result2;
-            return PrefabGen.method("SpawnItem", 4).invoke(Il2Cpp.string("item_prefab/" + bareID), pos, rot, NULL);
+            const idStr = Il2Cpp.string(bareID);
+            const cb = delegateCallback || NULL; // make sure NULL is defined in your scope, or use `null`
+            const q = rot || identityQuaternion;
+
+            return spawnItemAsyncMethod.invoke(idStr, pos, q, cb, DEFAULT_ITEM_SPAWN_SOURCE);
         } catch (e) {
-            smartError("[spawnItemAtPos] " + bareID, e);
+            console.error("[spawnItemAtPos] " + bareID + ": " + e);
             return null;
         }
     }
@@ -1963,7 +1983,7 @@ Il2Cpp.perform(async () => {
                     (pos.field("y").value as number) - 0.28 + ((Math.random() * 0.02) - 0.01),
                     (pos.field("z").value as number) + (fz * 0.14) + ((Math.random() * 0.05) - 0.025)
                 ];
-                const goop = spawnItemAtPos("item_snowball", spawnPos, identityQuaternion);
+                const goop = spawnItemAtPos("item_snowball", spawnPos, identityQuaternion, null);
                 if (!goop || goop.isNull?.()) continue;
                 spawnedGoopObjects.push({ object: goop, expireAt: time + expireAfter });
 
@@ -3180,8 +3200,8 @@ function imguiRecenterMenu() {
                 camPos,
                 Vector3.method("op_Multiply", 2).invoke(forward, 1.5)
             );
-
-            const rootNetObj = spawnItemAtPos(bagBuilderRootItem, spawnPos, identityQuaternion);
+            
+            const rootNetObj = spawnItemAtPos(bagBuilderRootItem, spawnPos, identityQuaternion, null);
             if (!rootNetObj || rootNetObj.isNull()) {
                 sendNotification("Bag Builder: failed root " + bagBuilderRootItem, false);
                 return;
@@ -3204,7 +3224,7 @@ function imguiRecenterMenu() {
             let stuck = 0;
             for (const childId of bagBuilderChildren) {
                 try {
-                    const childNetObj = spawnItemAtPos(childId, spawnPos, identityQuaternion);
+                    const childNetObj = spawnItemAtPos(childId, spawnPos, identityQuaternion, null);
                     if (!childNetObj || childNetObj.isNull()) continue;
 
                     let childGBI = childNetObj.method("GetComponent", 1).inflate(GBIClass).invoke();
@@ -3921,7 +3941,7 @@ function imguiRecenterMenu() {
                         const offsetTotal = Vector3.method("op_Addition", 2).invoke(offsetX, offsetY);
                         const finalPos = Vector3.method("op_Addition", 2).invoke(spawnBase, offsetTotal);
 
-                        const spawnedItem = spawnItemAtPos(targetItem, finalPos, rot);
+                        const spawnedItem = spawnItemAtPos(targetItem, finalPos, rot, null);
 
                         if (spawnedItem && !spawnedItem.isNull()) {
                             const rb = getComponent(spawnedItem, Rigidbody);
@@ -4392,7 +4412,7 @@ function imguiRecenterMenu() {
         toolTip?: string;
         enabled: boolean;
         imguiOnly: boolean;
-        static clickSfxId: number = 44; // change this to any SFX ID
+        static clickSfxId: number = 69; // change this to any SFX ID
         constructor(config: ButtonInfoConfig) {
             this.buttonText = config.buttonText;
             this.isTogglable = config.isTogglable ?? true;
@@ -6414,7 +6434,7 @@ function imguiRecenterMenu() {
                     const handTransform = rightHandTransform;
                     if (rightSecondary && rightGrab) {
                         try {
-                            const result = spawnItemAtPos(itemIDs[itemIndex], handTransform.method("get_position").invoke(), handTransform.method("get_rotation").invoke());
+                            const result = spawnItemAtPos(itemIDs[itemIndex], handTransform.method("get_position").invoke(), handTransform.method("get_rotation").invoke(), null);
                             if (!result || result.handle.isNull()) {
                                 sendNotification("Spawn returned null: " + itemIDs[itemIndex], false);
                             } else {
@@ -6441,7 +6461,7 @@ function imguiRecenterMenu() {
                             const rot = rightHandTransform.method("get_rotation").invoke();
                             // spawn multiple per tick
                             for (let i = 0; i < 5; i++) {
-                                spawnItemAtPos(itemIDs[itemIndex], pos, rot);
+                                spawnItemAtPos(itemIDs[itemIndex], pos, rot, null);
                             }
                         } catch (e) { smartError("Spawn spam:", e); }
                     }
@@ -6571,7 +6591,7 @@ function imguiRecenterMenu() {
                         itemGunDelay = time + 0.1;
                         try {
                             const hitPoint = ray.method("get_point").invoke();
-                            const result = spawnItemAtPos(itemIDs[itemIndex], hitPoint, identityQuaternion);
+                            const result = spawnItemAtPos(itemIDs[itemIndex], hitPoint, identityQuaternion, null);
                             if (!result || result.handle.isNull()) {
                                 sendNotification("Spawn returned null: " + itemIDs[itemIndex], false);
                             } else {
@@ -7813,10 +7833,10 @@ function imguiRecenterMenu() {
                         const spawnPos = handTf.method("get_position").invoke();
 
                         // Spawn the bag
-                        const bagNetObj = spawnItemAtPos("item_backpack", spawnPos, identityQuaternion);
+                        const bagNetObj = spawnItemAtPos("item_backpack", spawnPos, identityQuaternion, null);
 
                         // 2. Spawn the theremin and add it to the bag
-                        const thereminNetObj = spawnItemAtPos("item_theremin", spawnPos, identityQuaternion);
+                        const thereminNetObj = spawnItemAtPos("item_theremin", spawnPos, identityQuaternion, null);
                         if (bagNetObj && !bagNetObj.isNull() && thereminNetObj && !thereminNetObj.isNull()) {
                             try {
                                 const bag = bagNetObj.method("GetComponent", 1).inflate(BackpackItemClass).invoke();
@@ -8379,7 +8399,7 @@ function imguiRecenterMenu() {
                                     finalSpawnPos = add(finalSpawnPos, worldOffsetZ);
 
                                     // Spawn the landmine
-                                    const spawnedObj = spawnItemAtPos("item_landmine_bee", finalSpawnPos, rot);
+                                    const spawnedObj = spawnItemAtPos("item_landmine_bee", finalSpawnPos, rot, null);
 
                                     if (spawnedObj && !spawnedObj.isNull()) {
                                         try {
@@ -8670,7 +8690,7 @@ function imguiRecenterMenu() {
                             nativeSpawnPos.z = targetZ;
 
                             // Spawn the case at this unique position
-                            spawnItemAtPos(targetItem, nativeSpawnPos, rot);
+                            spawnItemAtPos(targetItem, nativeSpawnPos, rot, null);
 
                             radius += 0.05;
                         }
@@ -13584,7 +13604,7 @@ function imguiRecenterMenu() {
                         const spawnRot = identityQuaternion;
                         // Strip "item_prefab/" prefix if present
                         const bareID = itemID.replace(/^item_prefab\//, "");
-                        spawnItemAtPos(bareID, spawnPos, spawnRot);
+                        spawnItemAtPos(bareID, spawnPos, spawnRot, null);
                         sendNotification("<color=lime>Duped: " + bareID + "</color>", false, 1);
                     } catch (e) { smartError("Dupe Loop:", e); }
                 },
